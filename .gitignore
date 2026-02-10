@@ -1,0 +1,45 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ===== Virtual env =====
+.venv/
+venv/
+env/
+
+# ===== Build / dist =====
+build/
+dist/
+*.egg-info/
+
+# ===== IDE / Editor =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Logs =====
+*.log
+
+# ===== Banco de dados =====
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== Env files =====
+.env
+.env.*
+
+# ===== UV / Poetry / Lock files (se não quiser versionar) =====
+uv.lock
+poetry.lock
+
+# ===== Cache =====
+.cache/
+.pytest_cache/
+.mypy_cache/
