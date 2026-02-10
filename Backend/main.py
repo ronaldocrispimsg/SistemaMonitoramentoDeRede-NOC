@@ -12,7 +12,7 @@ app = FastAPI()
 app.include_router(router)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Permite que o seu HTML acesse a API
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
