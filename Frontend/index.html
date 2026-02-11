@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>NOC Lite</title>
+
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<h1>NOC Lite</h1>
+
+<section>
+    <h2>Cadastrar Host</h2>
+
+    <form id="hostForm">
+        <input id="name" placeholder="Nome" required>
+        <input id="address" placeholder="Endereço/IP" required>
+        <input id="port" placeholder="Porta (opcional)">
+        <button type="submit">Cadastrar</button>
+    </form>
+</section>
+
+<section>
+    <h2>Hosts</h2>
+    <button id="refreshBtn">Atualizar Lista</button>
+    <div id="hosts"></div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>
