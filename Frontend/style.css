@@ -35,6 +35,40 @@ button {
     margin-right: 8px;
 }
 
+.history-box {
+    margin-top: 8px;
+    font-size: 0.85em;
+    background: #bbbbbb;
+    padding: 6px;
+    border-radius: 6px;
+}
+
+.history-line {
+    background: #0f172a;
+    color: #e5e7eb;
+    padding: 6px 10px;
+    margin: 4px 0;
+    border-left: 4px solid #22c55e;
+    border-radius: 4px;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.history-btn {
+    font-size: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.hidden {
+    display: none;
+}
+
+
 .bg-success { background-color: #28a745; } /* Verde */
 .bg-danger { background-color: #dc3545; }  /* Vermelho */
 .bg-warning { background-color: #ffc107; } /* Amarelo */

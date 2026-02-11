@@ -65,15 +65,25 @@ async function loadHosts() {
             else if (h.status === "DEGRADED") statusColor = "bg-warning";
 
             card.innerHTML = `
-                <div>
-                    <strong>${h.name}</strong> 
-                    <span class="status-indicator ${statusColor}"></span>
-                    <small>(${h.address}${h.port ? ':' + h.port : ''})</small>
+                <div class="card-header">
+                    <div>
+                        <strong>${h.name}</strong> 
+                        <span class="status-indicator ${statusColor}"></span>
+                        <small>(${h.address}${h.port ? ':' + h.port : ''})</small>
+                    </div>
+
+                    <button class="history-btn"
+                        onclick="toggleHistory('${h.name}')">
+                        Ver histórico
+                    </button>
                 </div>
+               
                 <div id="result-${h.name}" style="margin-top: 10px; font-size: 0.9em;">
-                    <i>Carregando métricas...</i>
+                    <i>Atualizando...</i>
                 </div>
+                <div id="history-${h.name}" class="history-box hidden"></div>
             `;
+
             div.appendChild(card);
             
             // Chama o check individual imediatamente para cada host
@@ -94,8 +104,8 @@ async function checkHost(name) {
         const data = await res.json();
 
         // Define as bolinhas para Ping e TCP
-        const pingDot = data.ping.latency ? "bg-success" : "bg-danger";
-        const tcpDot = (data.tcp && data.tcp.success) ? "bg-success" : "bg-danger";
+        const pingDot = (data.ping && data.ping.latency !== null) ? "bg-success" : "bg-danger";
+        const tcpDot = (data.tcp && data.tcp.latency !== null) ? "bg-success" : "bg-danger";
 
         box.innerHTML = `
             <div>
@@ -105,13 +115,57 @@ async function checkHost(name) {
             ${data.tcp ? `
             <div>
                 <span class="status-indicator ${tcpDot}"></span>
-                TCP Porta ${data.port || ''}: ${data.tcp.success ? 'OK' : 'Falha'}
+                TCP: ${data.tcp.latency ?? "N/A"} ms
             </div>` : ''}
         `;
     } catch (err) {
         box.innerHTML = "<small style='color:red'>Erro na verificação.</small>";
     }
 }
+
+async function loadHistory(name) {
+    const box = document.getElementById("history-" + name);
+
+    box.innerHTML = "Carregando histórico...";
+
+    try {
+        const res = await fetch(`${API}/host/history/${name}`, {
+            method: "GET"
+        });
+
+        const data = await res.json();
+
+        if (!data.checks.length) {
+            box.innerHTML = "<small>Sem histórico ainda</small>";
+            return;
+        }
+
+        box.innerHTML = data.checks.map(c => `
+            <div class="history-line">
+                [${c.type}] 
+                ${c.success ? "OK" : "FAIL"} —
+                ${c.latency ?? "-"} ms —
+                ${new Date(c.timestamp).toLocaleTimeString()}
+            </div>
+        `).join("");
+
+    } catch {
+        box.innerHTML = "Erro ao carregar histórico";
+    }
+}
+
+async function toggleHistory(name) {
+    const box = document.getElementById("history-" + name);
+
+    if (!box.classList.contains("hidden")) {
+        box.classList.add("hidden");
+        return;
+    }
+
+    box.classList.remove("hidden");
+    loadHistory(name);
+}
+
 
 // ======================
 // Inicialização e Loop

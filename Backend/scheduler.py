@@ -29,15 +29,32 @@ def check_all_hosts():
                 host.status = "UP"
             
             host.last_check = datetime.now()
-            check_log = CheckResult(
-            host_name=host.name,
-            success=str(ping_result["success"]),
-            latency=ping_result.get("latency")
+            check_log_ping = CheckResult(
+                host_id=host.id,
+                host_name=host.name,
+                check_type="ping",
+                success=ping_result["success"],
+                latency=ping_result.get("latency"),
+                error=ping_result.get("error")
             )
         
-        db.add(check_log)
-        db.commit()
+            db.add(check_log_ping)
+        
 
+            if tcp_result is not None:
+                check_log_tcp = CheckResult(
+                    host_id=host.id,
+                    host_name=host.name,
+                    check_type="tcp",
+                    success=tcp_result["success"],
+                    latency=tcp_result.get("latency"),
+                    error=tcp_result.get("error")
+                )
+                db.add(check_log_tcp)
+        db.commit()
+    except Exception as e:
+        print(f"Erro no host {host.name}: {e}")
+        
     finally:
         db.close()
 

@@ -2,57 +2,77 @@ import subprocess
 import time
 import socket
 
-def ping_host(address: str, count: int = 1, timeout: int = 2):
+def resolve_dns(address: str):
     try:
-        start = time.time()
-        result = subprocess.run(
-            ["ping", "-c", str(count), "-W", str(timeout), address],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-
-        latency = round((time.time() - start) * 1000, 2)
-
+        ip = socket.gethostbyname(address)
         return {
-            "success": result.returncode == 0,
-            "latency": latency if result.returncode == 0 else None
+            "success": True,
+            "ip": ip
         }
-
-    except Exception:
+    except socket.gaierror as e:
         return {
             "success": False,
-            "latency": None
+            "error": str(e),
+            "ip": None
         }
 
-def tcp_check(address: str, port: int, timeout: int = 5):
-    start = time.time()
-    conexao = None
+def ping_host(address: str, count: int = 1, timeout: int = 2):
     
+    dns = resolve_dns(address)
+    if not dns["success"]:
+        return {
+            "success": False,
+            "latency": None,
+            "error": dns["error"]
+        }
+    
+    ip = dns["ip"]
+
+    cmd = ["ping", "-c", str(count), "-W", str(timeout), ip]
+
+    start = time.time() 
+    result = subprocess.run(cmd, stdout=subprocess.PIPE)
+
+    latency = round((time.time() - start) * 1000, 2)
+
+    return {
+        "success": True if result.returncode == 0 else False,
+        "latency": latency,
+        "resolved_ip": ip
+    }
+
+def tcp_check(address: str, port: int, timeout: int = 5):
+       
+    dns = resolve_dns(address)
+    if not dns["success"]:
+        return {
+            "success": False,
+            "error": dns["error"],
+            "latency": None
+        }
+    
+    ip = dns["ip"]
+
+    conexao = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    conexao.settimeout(timeout)
+    start = time.time()
+
     try:
-        conexao = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        conexao.settimeout(timeout)
-        conexao.connect((address, port))
-        tcp_latency = round((time.time() - start) * 1000, 2)
+        conexao.connect((ip, port))
+        latency = round((time.time() - start) * 1000, 2)
         return {
                 "success": True,
-                "error": None,
-                "tcp_latency": tcp_latency
+                "latency": latency,
+                "resolved_ip": ip
         }
         
-    except socket.timeout:
-        tcp_latency = round((time.time() - start) * 1000, 2)
-        return {
-                "success": False,
-                "error": "timeout",
-                "tcp_latency": tcp_latency
-        }
-    
-    except socket.error as e:
-        tcp_latency = round((time.time() - start) * 1000, 2)
+    except Exception as e:
+        latency = round((time.time() - start) * 1000, 2)
         return {
                 "success": False,
                 "error": str(e),
-                "tcp_latency": tcp_latency
+                "latency": latency,
+                "resolved_ip": ip
         }
     
     finally:
