@@ -51,12 +51,32 @@ def check_all_hosts():
                     error=tcp_result.get("error")
                 )
                 db.add(check_log_tcp)
+
+            trim_history(db, host.id, "ping")
+
+            if tcp_result is not None:
+                trim_history(db, host.id, "tcp")
+
         db.commit()
     except Exception as e:
         print(f"Erro no host {host.name}: {e}")
-        
+
     finally:
         db.close()
+
+def trim_history(db, host_id, check_type, limit=100):
+    old = (
+        db.query(CheckResult)
+        .filter(CheckResult.host_id == host_id,
+                CheckResult.check_type == check_type)
+        .order_by(CheckResult.timestamp.desc())
+        .offset(limit-1)
+        .all()
+    )
+
+    for row in old:
+        db.delete(row)
+
 
 def start_scheduler():
     scheduler.add_job(
@@ -67,3 +87,5 @@ def start_scheduler():
         replace_existing=True
     )
     scheduler.start()
+    
+

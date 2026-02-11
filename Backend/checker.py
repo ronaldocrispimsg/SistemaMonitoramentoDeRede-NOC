@@ -71,7 +71,7 @@ def tcp_check(address: str, port: int, timeout: int = 5):
         return {
                 "success": False,
                 "error": str(e),
-                "latency": latency,
+                "latency": None,
                 "resolved_ip": ip
         }
     

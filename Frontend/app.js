@@ -1,5 +1,5 @@
 const API = "http://127.0.0.1:8000";
-
+const charts = {};
 // ======================
 // Cadastrar Host (POST)
 // ======================
@@ -50,47 +50,68 @@ async function loadHosts() {
         const res = await fetch(`${API}/hosts/list`);
         const hosts = await res.json();
 
-        // Usamos uma estratégia de atualização para não "piscar" a tela
-        div.innerHTML = "";
-
         hosts.forEach(h => {
-            const card = document.createElement("div");
-            card.className = "card";
-            card.id = `card-${h.name}`;
+            let card = document.getElementById(`card-${h.name}`);
 
-            // Lógica simples para definir a cor da bolinha do status geral
+            // DEFINIÇÃO DE CORES
             let statusColor = "bg-secondary";
             if (h.status === "UP") statusColor = "bg-success";
             else if (h.status === "DOWN") statusColor = "bg-danger";
             else if (h.status === "DEGRADED") statusColor = "bg-warning";
 
+            // SE O CARD NÃO EXISTE, CRIA A ESTRUTURA
+            if (!card) {
+                card = document.createElement("div");
+                card.className = "card";
+                card.id = `card-${h.name}`;
+
             card.innerHTML = `
-                <div class="card-header">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <strong>${h.name}</strong> 
                         <span class="status-indicator ${statusColor}"></span>
                         <small>(${h.address}${h.port ? ':' + h.port : ''})</small>
                     </div>
-
-                    <button class="history-btn"
-                        onclick="toggleHistory('${h.name}')">
-                        Ver histórico
-                    </button>
+                    <div class="button-group" style="display: flex; gap: 10px;">
+                        <button class="history-btn"
+                            onclick="toggleHistory('${h.name}')">
+                            Ver histórico
+                        </button>
+                        <button class="latency-btn"
+                            onclick="toggleLatencyChart('${h.name}')">
+                            Ver gráfico de latência
+                        </button>
+                    </div>
                 </div>
-               
+                
                 <div id="result-${h.name}" style="margin-top: 10px; font-size: 0.9em;">
                     <i>Atualizando...</i>
                 </div>
+                <div id="chart-container-${h.name}" class="hidden" style="margin-top: 10px;">
+                    <canvas id="chart-${h.name}" height="120"></canvas>
+                </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
+
             `;
 
-            div.appendChild(card);
-            
-            // Chama o check individual imediatamente para cada host
+           div.appendChild(card);
+            } else {
+                // SE JÁ EXISTE, SÓ ATUALIZA A BOLINHA DE STATUS PRINCIPAL
+                const indicator = card.querySelector(".status-indicator");
+                indicator.className = `status-indicator ${statusColor}`;
+            }
+
+            // ATUALIZA OS DADOS DE PING/TCP
             checkHost(h.name);
+
+            // SE O GRÁFICO ESTIVER ABERTO, ATUALIZA ELE TAMBÉM
+            const container = document.getElementById("chart-container-" + h.name);
+            if (container && !container.classList.contains("hidden")) {
+                loadLatencyChart(h.name);
+            }
         });
     } catch (err) {
-        div.innerHTML = "<p style='color:red'>Erro ao carregar lista de hosts.</p>";
+        console.error("Erro ao carregar lista de hosts:", err);
     }
 }
 
@@ -125,14 +146,10 @@ async function checkHost(name) {
 
 async function loadHistory(name) {
     const box = document.getElementById("history-" + name);
-
     box.innerHTML = "Carregando histórico...";
 
     try {
-        const res = await fetch(`${API}/host/history/${name}`, {
-            method: "GET"
-        });
-
+        const res = await fetch(`${API}/host/history/${name}`);
         const data = await res.json();
 
         if (!data.checks.length) {
@@ -140,14 +157,20 @@ async function loadHistory(name) {
             return;
         }
 
-        box.innerHTML = data.checks.map(c => `
-            <div class="history-line">
-                [${c.type}] 
-                ${c.success ? "OK" : "FAIL"} —
-                ${c.latency ?? "-"} ms —
-                ${new Date(c.timestamp).toLocaleTimeString()}
-            </div>
-        `).join("");
+        box.innerHTML = data.checks.map(c => {
+            // Define a classe baseada no sucesso ou falha
+            const statusClass = c.success ? "line-success" : "line-error";
+            const statusText = c.success ? "OK" : "FAIL";
+
+            return `
+                <div class="history-line ${statusClass}">
+                    <span class="type-badge">[${c.type.toUpperCase()}]</span> 
+                    <strong>${statusText}</strong> —
+                    ${c.latency !== null ? c.latency + " ms" : "---"} —
+                    <small>${new Date(c.timestamp).toLocaleTimeString()}</small>
+                </div>
+            `;
+        }).join("");
 
     } catch {
         box.innerHTML = "Erro ao carregar histórico";
@@ -163,7 +186,61 @@ async function toggleHistory(name) {
     }
 
     box.classList.remove("hidden");
-    loadHistory(name);
+    await loadHistory(name);
+}
+async function toggleLatencyChart(name) {
+    const container = document.getElementById("chart-container-" + name);
+    if (!container) return;
+
+    if (container.classList.contains("hidden")) {
+        container.classList.remove("hidden");
+        await loadLatencyChart(name);
+    } else {
+        container.classList.add("hidden");
+    }
+}
+
+
+async function loadLatencyChart(name) {
+    if (charts[name]) charts[name].destroy();
+
+    const res = await fetch(`${API}/host/history/${name}`);
+    const data = await res.json();
+
+    const ping = data.checks.filter(c => c.type === "ping");
+    const tcp  = data.checks.filter(c => c.type === "tcp");
+
+    const labels = ping.map(c =>
+        new Date(c.timestamp).toLocaleTimeString()
+    );
+
+    const pingData = ping.map(c => c.latency);
+    const tcpData  = tcp.map(c => c.latency);
+
+    const ctx = document.getElementById("chart-" + name);
+
+    if (!ctx) return;
+
+    charts[name] = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: "Ping",
+                    data: pingData
+                },
+                {
+                    label: "TCP",
+                    data: tcpData
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            animation: false
+        }
+    });
 }
 
 
