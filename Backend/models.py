@@ -53,3 +53,15 @@ class Alert(Base):
     old_status = Column(String)
     new_status = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+class DNSCache(Base):
+    __tablename__ = "dns_cache"
+
+    id = Column(Integer, primary_key=True)
+    hostname = Column(String, unique=True, index=True)
+
+    ip_list = Column(String)          # json string dos IPs
+    ttl = Column(Integer)
+
+    resolved_at = Column(DateTime)
+    expires_at = Column(DateTime)

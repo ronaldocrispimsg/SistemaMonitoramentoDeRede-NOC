@@ -82,6 +82,12 @@ button {
     cursor: pointer;
 }
 
+.update-btn {
+    font-size: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
 .delete-btn {
     font-size: 12px;
     padding: 4px 8px;
@@ -140,6 +146,34 @@ button {
     from { transform: translateX(40px); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
 }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 8px;
+  width: 320px;
+}
+
+.modal input {
+  width: 93%;
+  margin-bottom: 10px;
+}
+
+.hidden {
+  display: none;
+}
+
+
 
 
 .bg-success { background-color: #28a745; } /* Verde */

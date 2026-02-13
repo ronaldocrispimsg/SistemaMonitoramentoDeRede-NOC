@@ -144,6 +144,22 @@ def delete_host(host_name: str, db: Session = Depends(get_db)):
 
     return {"detail": "Host desativado com sucesso"}
 
+@router.put("/host/update/{host_name}")
+def update_host(host_name: str, data: HostCreate, db: Session = Depends(get_db)):
+    host = db.query(Host).filter(Host.name == host_name).first()
+
+    if not host:
+        raise HTTPException(status_code=404, detail="Host não encontrado")
+    
+    if not resolve_dns(data.address)["success"]:
+        raise HTTPException(status_code=400, detail="Endereço inválido. ")
+    
+    host.address = data.address
+    host.port = data.port
+    db.commit()
+
+    return {"detail": "Host atualizado com sucesso"}
+
 @router.get("/alerts/list")
 def list_alerts(db: Session = Depends(get_db)):
     rows = (
@@ -165,3 +181,5 @@ def list_alerts(db: Session = Depends(get_db)):
         })
 
     return result
+
+

@@ -32,5 +32,20 @@
     <div id="alert-container"></div>
 
 <script src="app.js"></script>
+<div id="editModal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Editar Host</h3>
+
+    <input id="modal-name" disabled>
+    <input id="modal-ip">
+    <input id="modal-port">
+
+    <div class="modal-actions">
+      <button onclick="submitModalEdit()">Salvar</button>
+      <button onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

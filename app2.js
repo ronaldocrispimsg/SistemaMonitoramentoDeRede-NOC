@@ -81,7 +81,16 @@ async function loadHosts() {
                             onclick="toggleLatencyChart('${h.name}')">
                             Ver gráfico de latência
                         </button>
-                        <button onclick="openEditModal('${h.name}','${h.address}','${h.port ?? ""}')">
+                        <div id="edit-form-${h.name}" class="hidden mini-form">
+                            <input id="edit-name-${h.name}" value="${h.name}" placeholder="Nome">
+                            <input id="edit-ip-${h.name}" value="${h.address}" placeholder="Endereço">
+                            <input id="edit-port-${h.name}" value="${h.port ?? ''}" placeholder="Porta">
+
+                            <button onclick="saveHost('${h.name}')">
+                                Salvar
+                            </button>
+                        </div>
+                        <button onclick="toggleEditForm('${h.name}')">
                             Editar
                         </button>
                         <button class="delete-btn"
@@ -206,28 +215,19 @@ async function toggleLatencyChart(name) {
     }
 }
 
-let currentEditHost = null;
+function toggleEditForm(name) {
+    const box = document.getElementById("edit-form-" + name);
+    if (!box) return;
 
-function openEditModal(name, ip, port) {
-    currentEditHost = name;
-
-    document.getElementById("modal-name").value = name;
-    document.getElementById("modal-ip").value = ip;
-    document.getElementById("modal-port").value = port;
-
-    document.getElementById("editModal").classList.remove("hidden");
+    box.classList.toggle("hidden");
 }
 
-function closeModal() {
-    document.getElementById("editModal").classList.add("hidden");
-}
+async function saveHost(name) {
+    const newName = document.getElementById("edit-name-" + name).value;
+    const newIp   = document.getElementById("edit-ip-" + name).value;
+    const newPort = document.getElementById("edit-port-" + name).value;
 
-async function submitModalEdit() {
-    const newName = document.getElementById("modal-name").value;
-    const newIp = document.getElementById("modal-ip").value;
-    const newPort = document.getElementById("modal-port").value;
-
-    const res = await fetch(`${API}/host/update/${currentEditHost}`, {
+    const res = await fetch(`${API}/host/update/${name}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -238,12 +238,13 @@ async function submitModalEdit() {
     });
 
     if (res.ok) {
-        closeModal();
         await loadHosts();
     } else {
         alert("Erro ao salvar");
     }
 }
+
+
 
 async function loadLatencyChart(name) {
     if (charts[name]) charts[name].destroy();
