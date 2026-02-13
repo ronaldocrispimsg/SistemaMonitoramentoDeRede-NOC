@@ -49,7 +49,7 @@ async function loadHosts() {
     try {
         const res = await fetch(`${API}/hosts/list`);
         const hosts = await res.json();
-
+        div.innerHTML = "";
         hosts.forEach(h => {
             let card = document.getElementById(`card-${h.name}`);
 
@@ -80,6 +80,10 @@ async function loadHosts() {
                         <button class="latency-btn"
                             onclick="toggleLatencyChart('${h.name}')">
                             Ver gráfico de latência
+                        </button>
+                        <button class="delete-btn"
+                            onclick="softDeleteHost('${h.name}')">
+                            Deletar
                         </button>
                     </div>
                 </div>
@@ -124,7 +128,7 @@ async function checkHost(name) {
 
         const data = await res.json();
 
-        // Define as bolinhas para Ping e TCP
+        //bolinhas pra Ping e TCP
         const pingDot = (data.ping && data.ping.latency !== null) ? "bg-success" : "bg-danger";
         const tcpDot = (data.tcp && data.tcp.latency !== null) ? "bg-success" : "bg-danger";
 
@@ -158,7 +162,6 @@ async function loadHistory(name) {
         }
 
         box.innerHTML = data.checks.map(c => {
-            // Define a classe baseada no sucesso ou falha
             const statusClass = c.success ? "line-success" : "line-error";
             const statusText = c.success ? "OK" : "FAIL";
 
@@ -243,13 +246,77 @@ async function loadLatencyChart(name) {
     });
 }
 
+function showAlertCard(alert) {
+    const box = document.getElementById("alert-container");
+
+    const card = document.createElement("div");
+    card.className = "alert-card";
+
+    if (alert.new_status === "DOWN") 
+        card.classList.add("alert-down");
+
+    else if (alert.new_status === "UP") 
+        card.classList.add("alert-up");
+
+    else 
+        card.classList.add("alert-degraded");
+
+    card.innerHTML = `
+        <strong>${alert.host_name}</strong><br>
+        ${alert.old_status} → ${alert.new_status}
+    `;
+
+    box.appendChild(card);
+
+    setTimeout(() => {
+        card.remove();
+    }, 6000);
+}
+
+let lastAlertTime = null;
+
+async function checkAlerts() {
+    const res = await fetch(`${API}/alerts/list`);
+    const alerts = await res.json();
+
+    alerts.forEach(a => {
+        if (!lastAlertTime || a.timestamp > lastAlertTime) {
+            showAlertCard(a);
+            lastAlertTime = a.timestamp;
+        }
+    });
+}
+
+async function softDeleteHost(name) {
+
+    if (!confirm("Remover host?")) return;
+
+    try {
+        const res = await fetch(`${API}/host/delete/${name}`, {
+            method: "DELETE"
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            alert("Erro ao remover: " + (err.detail || "erro"));
+            return;
+        }
+
+        await loadHosts();
+
+    } catch (e) {
+        alert("Falha de conexão com API");
+    }
+}
+
+
 
 // ======================
 // Inicialização e Loop
 // ======================
 
-// Atualiza a cada 2 segundos (2000ms)
 setInterval(loadHosts, 10000);
+setInterval(checkAlerts, 5000);
 
 document.getElementById("refreshBtn").addEventListener("click", loadHosts);
 window.onload = loadHosts;

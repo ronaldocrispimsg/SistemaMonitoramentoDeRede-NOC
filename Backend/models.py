@@ -12,6 +12,9 @@ class Host(Base):
     address = Column(String)
     port = Column(Integer, nullable=True)
 
+    active = Column(Boolean, default=True)
+    active_time = Column(DateTime, nullable=True)
+
     status = Column(String)
     status_ping = Column(String)
     status_tcp = Column(String)
@@ -41,3 +44,12 @@ class CheckResult(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     host = relationship("Host", back_populates="checks")
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(Integer, primary_key=True)
+    host_id = Column(Integer)
+    old_status = Column(String)
+    new_status = Column(String)
+    timestamp = Column(DateTime, default=datetime.utcnow)

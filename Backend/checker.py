@@ -36,7 +36,7 @@ def ping_host(address: str, count: int = 1, timeout: int = 2):
     latency = round((time.time() - start) * 1000, 2)
 
     return {
-        "success": True if result.returncode == 0 else False,
+        "success": True,
         "latency": latency,
         "resolved_ip": ip
     }

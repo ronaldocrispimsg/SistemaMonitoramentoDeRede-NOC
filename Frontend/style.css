@@ -52,12 +52,10 @@ button {
     border-radius: 4px;
 }
 
-/* Borda Verde para Sucesso */
 .line-success {
     border-left: 4px solid #22c55e;
 }
 
-/* Borda Vermelha para Falha */
 .line-error {
     border-left: 4px solid #ef4444;
 }
@@ -84,6 +82,12 @@ button {
     cursor: pointer;
 }
 
+.delete-btn {
+    font-size: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
 .hidden {
     display: none !important;
 }
@@ -100,6 +104,41 @@ button {
 
 .button-group button:hover {
     background: #e2e6ea;
+}
+
+#alert-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 320px;
+    z-index: 9999;
+}
+
+.alert-card {
+    background: gray;
+    color: white;
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 10px;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    animation: slideIn 0.3s ease-out;
+}
+
+.alert-up {
+    border-left: 10px solid #28a745;
+}
+
+.alert-down {
+    border-left: 10px solid #dc3545;
+}
+
+.alert-degraded {
+    border-left: 10px solid #ffc107;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(40px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
 
 

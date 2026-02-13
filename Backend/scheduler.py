@@ -2,7 +2,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 from sqlalchemy.orm import Session
 from Backend.database import SessionLocal
-from Backend.models import Host, CheckResult
+from Backend.models import Host, CheckResult, Alert
 from Backend.checker import ping_host, tcp_check
 
 scheduler = BackgroundScheduler()
@@ -10,9 +10,11 @@ scheduler = BackgroundScheduler()
 def check_all_hosts():
     db: Session = SessionLocal()
     try:
-        hosts = db.query(Host).all()
+        hosts = db.query(Host).filter(Host.active == True).all()
 
         for host in hosts:
+            old_status = host.status
+
             ping_result = ping_host(host.address)
             tcp_result = None
 
@@ -28,6 +30,15 @@ def check_all_hosts():
             else:
                 host.status = "UP"
             
+            if old_status is not None:
+                if old_status != host.status:
+                    alert = Alert(
+                        host_id=host.id,
+                        old_status=old_status,
+                        new_status=host.status
+                    )
+                    db.add(alert)
+
             host.last_check = datetime.now()
             check_log_ping = CheckResult(
                 host_id=host.id,
@@ -40,7 +51,6 @@ def check_all_hosts():
         
             db.add(check_log_ping)
         
-
             if tcp_result is not None:
                 check_log_tcp = CheckResult(
                     host_id=host.id,
@@ -51,6 +61,7 @@ def check_all_hosts():
                     error=tcp_result.get("error")
                 )
                 db.add(check_log_tcp)
+    
 
             trim_history(db, host.id, "ping")
 
@@ -82,7 +93,7 @@ def start_scheduler():
     scheduler.add_job(
         check_all_hosts,
         "interval",
-        seconds=20,   # depois deixo por host
+        seconds=20, 
         id="check_hosts_job",
         replace_existing=True
     )
