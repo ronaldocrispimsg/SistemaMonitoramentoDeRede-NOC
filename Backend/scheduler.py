@@ -53,7 +53,8 @@ def check_all_hosts():
                     )
                     db.add(check_log_dns)
 
-                ip = ips[0]  # Usa o primeiro IP resolvido
+                index = int(time.time()) % len(ips)
+                ip = ips[index] # Usa um IP diferente a cada checagem para balancear a carga, caso haja múltiplos IPs
 
                 # Verifica se o IP mudou desde a última resolução
                 if host.last_resolved_ip and host.last_resolved_ip != ip:

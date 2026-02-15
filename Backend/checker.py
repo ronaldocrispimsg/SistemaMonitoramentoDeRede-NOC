@@ -6,9 +6,16 @@ from datetime import datetime, timedelta
 from Backend.models import DNSCache
 
 def resolve_dns_cached(address: str, db):
+    
     # se já for IP → retorna
     try:
-        socket.inet_aton(address)
+        socket.inet_pton(socket.AF_INET, address)
+        return [address]
+    except:
+        pass
+
+    try:
+        socket.inet_pton(socket.AF_INET6, address)
         return [address]
     except:
         pass
@@ -62,7 +69,10 @@ def resolve_dns_cached(address: str, db):
 
 def ping_host(ip: str, count: int = 1, timeout: int = 2):
     
-    cmd = ["ping", "-c", str(count), "-W", str(timeout), ip]
+    if ":" in ip:
+        cmd = ["ping", "-6", "-c", str(count), "-W", str(timeout), ip]
+    else:
+        cmd = ["ping", "-c", str(count), "-W", str(timeout), ip]
 
     start = time.time()
 
