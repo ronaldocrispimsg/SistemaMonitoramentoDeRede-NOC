@@ -2,9 +2,27 @@ import subprocess
 import time
 import socket
 import json
+import dns.resolver
 from datetime import datetime, timedelta
 from Backend.models import DNSCache
 
+def resolve_dns_real(address):
+
+    try:
+        answers = dns.resolver.resolve(address, "A")
+        ips = [r.to_text() for r in answers]
+        ttl = answers.rrset.ttl
+        return ips, ttl
+
+    except:
+        try:
+            answers = dns.resolver.resolve(address, "AAAA")
+            ips = [r.to_text() for r in answers]
+            ttl = answers.rrset.ttl
+            return ips, ttl
+        except:
+            return [], None
+        
 def resolve_dns_cached(address: str, db):
     
     # se já for IP → retorna
@@ -29,25 +47,21 @@ def resolve_dns_cached(address: str, db):
     now = datetime.utcnow()
 
     # cache válido
-
-    if record and record.expires_time > now:
+    if record and (record.expires_time - now).total_seconds() > record.ttl * 0.1:
         return json.loads(record.ip_list)
 
     # resolve DNS real
+    ips, ttl = resolve_dns_real(address)
 
-    try:
-        info = socket.getaddrinfo(address, None)
-        ips = list({item[4][0] for item in info})
-    except Exception:
+    if not ips:
         return []
 
-    # TTL fixo (por enquanto)
+    if ttl is None:
+        ttl = 60  # fallback
 
-    ttl = 300
     expires = now + timedelta(seconds=ttl)
 
     #  salva cache
-
     if record:
         record.ip_list = json.dumps(ips)
         record.ttl = ttl

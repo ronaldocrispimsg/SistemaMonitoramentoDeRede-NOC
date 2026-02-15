@@ -15,11 +15,14 @@ class Host(Base):
     active = Column(Boolean, default=True)
     active_time = Column(DateTime, nullable=True)
 
-    last_resolved_ip = Column(String, nullable=True) # Armazena o último IP resolvido
+    last_resolved_ip = Column(String, nullable=True)
 
     status = Column(String)
     status_ping = Column(String)
     status_tcp = Column(String)
+
+    fail_streak = Column(Integer, default=0)
+    success_streak = Column(Integer, default=0)
 
     latency_ping = Column(Float, nullable=True)
     latency_tcp = Column(Float, nullable=True)
@@ -65,7 +68,7 @@ class DNSCache(Base):
     id = Column(Integer, primary_key=True)
     hostname = Column(String, unique=True, index=True)
 
-    ip_list = Column(String)          # json string dos IPs
+    ip_list = Column(String)
     ttl = Column(Integer)
 
     resolved_time = Column(DateTime)

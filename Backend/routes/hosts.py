@@ -225,7 +225,7 @@ def heatmap(host_name: str, db: Session = Depends(get_db)):
 
     for r in rows:
         bucket = r.timestamp.replace(
-            # minute=(r.timestamp.minute // 5) * 5,
+            minute=r.timestamp.minute,
             second=0,
             microsecond=0
         )
