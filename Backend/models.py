@@ -15,6 +15,8 @@ class Host(Base):
     active = Column(Boolean, default=True)
     active_time = Column(DateTime, nullable=True)
 
+    last_resolved_ip = Column(String, nullable=True) # Armazena o último IP resolvido
+
     status = Column(String)
     status_ping = Column(String)
     status_tcp = Column(String)
@@ -50,8 +52,11 @@ class Alert(Base):
 
     id = Column(Integer, primary_key=True)
     host_id = Column(Integer)
+    alert_type = Column(String)
+
     old_status = Column(String)
     new_status = Column(String)
+
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 class DNSCache(Base):
@@ -63,5 +68,5 @@ class DNSCache(Base):
     ip_list = Column(String)          # json string dos IPs
     ttl = Column(Integer)
 
-    resolved_at = Column(DateTime)
-    expires_at = Column(DateTime)
+    resolved_time = Column(DateTime)
+    expires_time = Column(DateTime)

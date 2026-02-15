@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from Backend.database import SessionLocal
-from Backend.models import Host, Alert
-from Backend.checker import ping_host, tcp_check, resolve_dns
-from Backend.schemas import HostCreate
+from Backend.models import CheckResult, Host, Alert
+from Backend.checker import ping_host, tcp_check, resolve_dns_cached
+from Backend.schemas import HostCreate, HostUpdate
 
 router = APIRouter()
 
@@ -20,6 +20,11 @@ def get_db():
 def create_host(data: HostCreate, db: Session = Depends(get_db)):
     
     existing_host = db.query(Host).filter(Host.name == data.name).first()
+    
+    ips = resolve_dns_cached(data.address, db)  # Verifica se o endereço é válido       
+    if not ips:
+        raise HTTPException(status_code=400, detail="Endereço inválido")
+    
     if existing_host:
         if not existing_host.active:
             existing_host.active = True
@@ -28,7 +33,10 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
             existing_host.last_check = None
             existing_host.address = data.address
             existing_host.port = data.port
+
             db.commit()
+            db.refresh(existing_host)
+            return existing_host
         else:
             raise HTTPException(status_code=409, detail="Host com esse nome já existe")
 
@@ -38,15 +46,9 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
             address=data.address,
             port=data.port
         )
-        
-        resultado_dns = resolve_dns(data.address)  # Verifica se o endereço é válido
-        
-        if not resultado_dns["success"]:
-            raise HTTPException(status_code=400, detail="Endereço inválido")
-        else:
-            db.add(host)
-            db.commit()
-            db.refresh(host)
+        db.add(host)
+        db.commit()
+        db.refresh(host)
 
         return host
 
@@ -59,17 +61,24 @@ def list_hosts(db: Session = Depends(get_db)):
 
 @router.post("/host/check/{host_name}")
 def check_host(host_name: str, db: Session = Depends(get_db)):
+
     host = db.query(Host).filter(Host.name == host_name).first()
 
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
 
+    ips = resolve_dns_cached(host.address, db)
 
-    ping_result = ping_host(host.address)
+    if not ips:
+        raise HTTPException(400, "DNS fail")
+
+    ip = ips[0]
+
+    ping_result = ping_host(ip)
     tcp_result = None
 
     if host.port is not None:
-        tcp_result = tcp_check(host.address, host.port)
+        tcp_result = tcp_check(ip, host.port)
 
     host.status_ping = "UP" if ping_result["success"] else "DOWN"
     host.latency_ping = ping_result["latency"]
@@ -116,18 +125,26 @@ def host_history(host_name: str, db: Session = Depends(get_db)):
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
 
+    checks = (
+        db.query(CheckResult)
+        .filter(CheckResult.host_id == host.id)
+        .order_by(CheckResult.timestamp.desc())
+        .limit(200)
+        .all()
+    )
+
     return {
         "host": host.name,
         "address": host.address,
         "checks": [
             {
-                "type": check.check_type,
-                "success": check.success,
-                "latency": check.latency,
-                "error": check.error,
-                "timestamp": check.timestamp.isoformat()
+                "type": c.check_type,
+                "success": c.success,
+                "latency": c.latency,
+                "error": c.error,
+                "timestamp": c.timestamp.isoformat()
             }
-            for check in host.checks
+            for c in checks
         ]
     }
 
@@ -145,13 +162,14 @@ def delete_host(host_name: str, db: Session = Depends(get_db)):
     return {"detail": "Host desativado com sucesso"}
 
 @router.put("/host/update/{host_name}")
-def update_host(host_name: str, data: HostCreate, db: Session = Depends(get_db)):
+def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db)):
     host = db.query(Host).filter(Host.name == host_name).first()
 
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
-    
-    if not resolve_dns(data.address)["success"]:
+    ips = resolve_dns_cached(data.address, db)
+
+    if not ips:
         raise HTTPException(status_code=400, detail="Endereço inválido. ")
     
     host.address = data.address
@@ -177,7 +195,7 @@ def list_alerts(db: Session = Depends(get_db)):
             "host_name": host_name,
             "old_status": alert.old_status,
             "new_status": alert.new_status,
-            "timestamp": alert.timestamp
+            "timestamp": alert.timestamp.isoformat()
         })
 
     return result

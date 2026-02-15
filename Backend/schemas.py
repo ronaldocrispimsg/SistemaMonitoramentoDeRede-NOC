@@ -5,3 +5,7 @@ class HostCreate(BaseModel):
     name: str
     address: str
     port: Optional[int] = None
+
+class HostUpdate(BaseModel):
+    address: str
+    port: Optional[int] = None
