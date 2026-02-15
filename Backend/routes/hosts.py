@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 from Backend.database import SessionLocal
 from Backend.models import CheckResult, Host, Alert
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
@@ -199,5 +199,50 @@ def list_alerts(db: Session = Depends(get_db)):
         })
 
     return result
+
+@router.get("/host/heatmap/{host_name}")
+def heatmap(host_name: str, db: Session = Depends(get_db)):
+
+    host = db.query(Host).filter_by(name=host_name).first()
+    if not host:
+        raise HTTPException(404, "Host não encontrado")
+
+    since = datetime.utcnow() - timedelta(hours=24)
+
+    rows = (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host.id,
+            CheckResult.check_type == "ping",
+            CheckResult.timestamp >= since
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(1000)
+
+    )
+
+    buckets = {}
+
+    for r in rows:
+        bucket = r.timestamp.replace(
+            # minute=(r.timestamp.minute // 5) * 5,
+            second=0,
+            microsecond=0
+        )
+
+        buckets.setdefault(bucket, []).append(r.latency)
+
+    result = []
+
+    for t, values in buckets.items():
+        lat = [v for v in values if v is not None]
+        avg = sum(lat)/len(lat) if lat else None
+
+        result.append({
+            "time": t.isoformat(),
+            "latency": avg
+        })
+
+    return sorted(result, key=lambda x: x["time"])
 
 

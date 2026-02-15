@@ -81,6 +81,9 @@ async function loadHosts() {
                             onclick="toggleLatencyChart('${h.name}')">
                             Ver gráfico de latência
                         </button>
+                        <button onclick="toggleHeatmap('${h.name}')">
+                            Heatmap
+                        </button>
                         <button onclick="openEditModal('${h.name}','${h.address}','${h.port ?? ""}')">
                             Editar
                         </button>
@@ -98,6 +101,7 @@ async function loadHosts() {
                     <canvas id="chart-${h.name}" height="120"></canvas>
                 </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
+                <div id="heatmap-${h.name}" class="hidden heatmap-box"></div>
 
             `;
 
@@ -206,6 +210,20 @@ async function toggleLatencyChart(name) {
     }
 }
 
+async function toggleHeatmap(name) {
+    const box = document.getElementById("heatmap-" + name);
+
+    if (!box) return;
+
+    if (!box.classList.contains("hidden")) {
+        box.classList.add("hidden");
+        return;
+    }
+
+    box.classList.remove("hidden");
+    await loadHeatmap(name);
+}
+
 let currentEditHost = null;
 
 function openEditModal(name, ip, port) {
@@ -231,7 +249,6 @@ async function submitModalEdit() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            name: newName,
             address: newIp,
             port: newPort ? parseInt(newPort) : null
         })
@@ -350,6 +367,32 @@ async function softDeleteHost(name) {
     }
 }
 
+async function loadHeatmap(name) {
+
+    const res = await fetch(`${API}/host/heatmap/${name}`);
+    const data = await res.json();
+
+    const box = document.getElementById("heatmap-" + name);
+    box.innerHTML = "";
+
+    data.forEach(p => {
+        const d = document.createElement("div");
+        d.className = "heat-cell";
+
+        if (p.latency == null)
+            d.style.background = "#444";
+        else if (p.latency < 50)
+            d.style.background = "#2ecc71";
+        else if (p.latency < 150)
+            d.style.background = "#f1c40f";
+        else
+            d.style.background = "#e74c3c";
+
+        d.title = p.time + " → " + p.latency + " ms";
+
+        box.appendChild(d);
+    });
+}
 
 
 // ======================
