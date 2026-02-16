@@ -113,7 +113,7 @@ async function loadHosts() {
             }
 
             // ATUALIZA OS DADOS DE PING/TCP
-            checkHost(h.name);
+            loadLastResult(h.name);
 
             // SE O GRÁFICO ESTIVER ABERTO, ATUALIZA ELE TAMBÉM
             const container = document.getElementById("chart-container-" + h.name);
@@ -126,33 +126,29 @@ async function loadHosts() {
     }
 }
 
-async function checkHost(name) {
+async function loadLastResult(name) {
     const box = document.getElementById("result-" + name);
 
-    try {
-        const res = await fetch(`${API}/host/check/${name}`, { method: "POST" });
-        if (!res.ok) throw new Error();
+    const res = await fetch(`${API}/host/history/${name}`);
+    const data = await res.json();
 
-        const data = await res.json();
+    const lastPing = data.checks.find(c => c.type === "ping");
+    const lastTcp  = data.checks.find(c => c.type === "tcp");
 
-        //bolinhas pra Ping e TCP
-        const pingDot = (data.ping && data.ping.latency !== null) ? "bg-success" : "bg-danger";
-        const tcpDot = (data.tcp && data.tcp.latency !== null) ? "bg-success" : "bg-danger";
+    const pingDot = lastPing?.success ? "bg-success" : "bg-danger";
+    const tcpDot  = lastTcp?.success ? "bg-success" : "bg-danger";
 
-        box.innerHTML = `
-            <div>
-                <span class="status-indicator ${pingDot}"></span>
-                Ping: ${data.ping.latency ?? "N/A"} ms
-            </div>
-            ${data.tcp ? `
-            <div>
-                <span class="status-indicator ${tcpDot}"></span>
-                TCP: ${data.tcp.latency ?? "N/A"} ms
-            </div>` : ''}
-        `;
-    } catch (err) {
-        box.innerHTML = "<small style='color:red'>Erro na verificação.</small>";
-    }
+    box.innerHTML = `
+        <div>
+            <span class="status-indicator ${pingDot}"></span>
+            Ping: ${lastPing?.latency ?? "N/A"} ms
+        </div>
+        ${lastTcp ? `
+        <div>
+            <span class="status-indicator ${tcpDot}"></span>
+            TCP: ${lastTcp.latency ?? "N/A"} ms
+        </div>` : ''}
+    `;
 }
 
 async function loadHistory(name) {

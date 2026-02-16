@@ -16,152 +16,193 @@ def check_all_hosts():
     db: Session = SessionLocal()
     try:
         hosts = db.query(Host).filter(Host.active == True).all()
-        
+
         for host in hosts:
             try:
                 old_status = host.status
 
-                ips = resolve_dns_cached(host.address, db)
+                # =====================
+                # DNS
+                # =====================
+                dns_result = resolve_dns_cached(host.address, db)
 
+                ips = []
+                ttl = None
+                ttl_remaining = None
+
+                if isinstance(dns_result, tuple):
+                    if len(dns_result) == 3:
+                        ips, ttl, ttl_remaining = dns_result
+                    elif len(dns_result) == 1:
+                        ips = dns_result[0]
+                elif isinstance(dns_result, list):
+                    ips = dns_result
+
+                if ttl is not None:
+                    host.dns_ttl = ttl
+                if ttl_remaining is not None:
+                    host.dns_ttl_remaining = ttl_remaining
+
+                # alerta TTL baixo
+                if ttl is not None and ttl < 60:
+                    if not host.last_ttl_alert or (datetime.utcnow() - host.last_ttl_alert).seconds > 3600:
+                        db.add(Alert(
+                            host_id=host.id,
+                            alert_type="DNS_TTL_LOW",
+                            old_status="ttl",
+                            new_status=str(ttl)
+                        ))
+                        host.last_ttl_alert = datetime.utcnow()
+
+                # =====================
+                # DNS FAIL
+                # =====================
                 if not ips:
                     host.status = "DOWN"
-                    
-                    check_log_dns= CheckResult(
+                    host.last_resolved_ip = None
+
+                    db.add(CheckResult(
                         host_id=host.id,
                         host_name=host.name,
                         check_type="dns",
                         success=False,
                         latency=None,
                         error="DNS resolve failed"
-                    ) 
-                    db.add(check_log_dns)
+                    ))
 
                     host.fail_streak = (host.fail_streak or 0) + 1
                     host.success_streak = 0
-                    
-                    if old_status != "DOWN" and host.fail_streak >= ALERT_FAIL_THRESHOLD:
-                        alert = Alert(
-                            host_id=host.id,
-                            old_status=old_status,
-                            new_status="DOWN"
-                        )
-                        db.add(alert)
-                        
-                    host.last_check = datetime.now()
-                    db.flush()
-                    trim_history(db, host.id, "dns")
 
+                    trim_history(db, host.id, "dns")
+                    db.commit()
                     continue
-                else:
-                    check_log_dns= CheckResult(
-                        host_id=host.id,
-                        host_name=host.name,
-                        check_type="dns",
-                        success=True,
-                        latency=None,
-                        error=None
-                    )
-                    db.add(check_log_dns)
-                    db.flush()
-                    trim_history(db, host.id, "dns")
 
-                # Rotacao por host.id
+                # DNS OK log
+                db.add(CheckResult(
+                    host_id=host.id,
+                    host_name=host.name,
+                    check_type="dns",
+                    success=True,
+                    latency=None,
+                    error=None
+                ))
+                trim_history(db, host.id, "dns")
+
+                # =====================
+                # Escolha IP rotativo
+                # =====================
                 index = (host.id + int(time.time()/20)) % len(ips)
-                ip = ips[index] # Usa um IP diferente a cada checagem para balancear a carga, caso haja múltiplos IPs
+                ip = ips[index]
 
-                # Verifica se o IP mudou desde a última resolução
                 if host.last_resolved_ip and host.last_resolved_ip not in ips:
-                    alert = Alert(
-                            host_id=host.id,
-                            alert_type="DNS_CHANGE",
-                            old_status=f"old_IP {host.last_resolved_ip}",
-                            new_status=f"new_set {ips}"
-                    )
-                    db.add(alert)
+                    db.add(Alert(
+                        host_id=host.id,
+                        alert_type="DNS_CHANGE",
+                        old_status=host.last_resolved_ip,
+                        new_status=str(ips)
+                    ))
 
+                host.last_resolved_ip = ip
 
-                host.last_resolved_ip = ip  # Armazena o último IP resolvido
-
+                # =====================
+                # CHECKS
+                # =====================
                 ping_result = ping_host(ip)
-                
-                tcp_result = None
 
-                if host.port is not None:
+                tcp_result = None
+                if host.port:
                     tcp_result = tcp_check(ip, host.port)
 
-                if not ping_result["success"]:
-                    host.status = "DOWN"
-                    host.fail_streak = (host.fail_streak or 0) + 1
-                    host.success_streak = 0
+                # =====================
+                # STATUS ENGINE (CORRETO)
+                # =====================
+                if tcp_result and tcp_result["success"]:
+                    new_status = "UP"
 
-                elif tcp_result is not None and not tcp_result["success"]:
-                    host.status = "DEGRADED"
-                    host.fail_streak = (host.fail_streak or 0) + 1
+                elif ping_result["success"]:
+                    new_status = "UP"
+
+                elif tcp_result and not tcp_result["success"]:
+                    new_status = "DEGRADED"
+
+                else:
+                    new_status = "DOWN"
+
+                host.status = new_status
+
+                # =====================
+                # STREAK ENGINE
+                # =====================
+                if new_status == "UP":
+                    host.success_streak = (host.success_streak or 0) + 1
+                    host.fail_streak = 0
+
+                elif new_status == "DEGRADED":
                     host.success_streak = 0
 
                 else:
-                    host.status = "UP"
-                    host.success_streak = (host.success_streak or 0) + 1
-                    host.fail_streak = 0
-                
-                if old_status is not None and old_status != host.status:
-                    # ALERTA DE FALHA CONFIRMADA
-                    if host.status != "UP" and host.fail_streak >= ALERT_FAIL_THRESHOLD:
-                        alert = Alert(
+                    host.fail_streak = (host.fail_streak or 0) + 1
+                    host.success_streak = 0
+
+                # =====================
+                # ALERTAS TRANSIÇÃO
+                # =====================
+                if old_status and old_status != new_status:
+
+                    if new_status != "UP" and host.fail_streak >= ALERT_FAIL_THRESHOLD:
+                        db.add(Alert(
                             host_id=host.id,
                             old_status=old_status,
-                            new_status=host.status
-                        )
-                        db.add(alert)
-                    # ALERTA DE RECUPERAÇÃO CONFIRMADA
-                    elif host.status == "UP" and host.success_streak >= ALERT_RECOVER_THRESHOLD:
-                        alert = Alert(
+                            new_status=new_status
+                        ))
+
+                    elif new_status == "UP" and host.success_streak >= ALERT_RECOVER_THRESHOLD:
+                        db.add(Alert(
                             host_id=host.id,
                             old_status=old_status,
                             new_status="UP_RECOVERED"
-                        )
-                        db.add(alert)
+                        ))
 
-                host.last_check = datetime.now()
+                host.last_check = datetime.utcnow()
 
-                check_log_ping = CheckResult(
+                # =====================
+                # LOG CHECKS
+                # =====================
+                db.add(CheckResult(
                     host_id=host.id,
                     host_name=host.name,
                     check_type="ping",
                     success=ping_result["success"],
                     latency=ping_result.get("latency"),
                     error=ping_result.get("error")
-                )
-                db.add(check_log_ping)
-            
-                if tcp_result is not None:
-                    check_log_tcp = CheckResult(
+                ))
+
+                if tcp_result:
+                    db.add(CheckResult(
                         host_id=host.id,
                         host_name=host.name,
                         check_type="tcp",
                         success=tcp_result["success"],
                         latency=tcp_result.get("latency"),
                         error=tcp_result.get("error")
-                    )
-                    db.add(check_log_tcp)
-
-                db.flush()  # Garante que os dados sejam escritos no banco antes de tentar cortar o histórico
+                    ))
 
                 trim_history(db, host.id, "ping")
-
-                if tcp_result is not None:
+                if tcp_result:
                     trim_history(db, host.id, "tcp")
 
-            except Exception as e:
-                print(f"Erro no host {host.name}: {e}")
+                db.commit()
 
-        db.commit()
+            except Exception as e:
+                print(f"[HOST ERROR] {host.name}: {e}")
+                db.rollback()
 
     except Exception as e:
-        print(f"Erro no scheduler: {e}")
+        print(f"[SCHEDULER ERROR] {e}")
 
     finally:
         db.close()
+
 
 def trim_history(db, host_id, check_type, limit=100):
     old = (
@@ -181,7 +222,7 @@ def start_scheduler():
     scheduler.add_job(
         check_all_hosts,
         "interval",
-        seconds=20, 
+        seconds=10, 
         id="check_hosts_job",
         replace_existing=True
     )

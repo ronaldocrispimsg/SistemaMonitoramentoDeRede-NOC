@@ -23,6 +23,9 @@ class Host(Base):
 
     fail_streak = Column(Integer, default=0)
     success_streak = Column(Integer, default=0)
+    dns_ttl = Column(Integer, nullable=True)
+    dns_ttl_remaining = Column(Integer, nullable=True)
+    last_ttl_alert = Column(DateTime, nullable=True)
 
     latency_ping = Column(Float, nullable=True)
     latency_tcp = Column(Float, nullable=True)
