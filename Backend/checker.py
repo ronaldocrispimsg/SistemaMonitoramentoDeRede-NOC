@@ -172,3 +172,34 @@ def tcp_check(ip: str, port: int, timeout: int = 5):
              conexao.close()
         except:
              pass
+        
+def compute_health(ping_result, tcp_result):
+
+    score = 0
+
+    # ---------- Ping ----------
+    if ping_result["success"]:
+        score += 40
+
+        lat = ping_result.get("latency") or 9999
+
+        if lat < 100:
+            score += 20
+        elif lat < 300:
+            score += 10
+
+    # ---------- TCP ----------
+    if tcp_result and tcp_result["success"]:
+        score += 40
+
+    # ---------- Severidade ----------
+    if score >= 90:
+        severity = "HEALTHY"
+    elif score >= 70:
+        severity = "WARNING"
+    elif score >= 40:
+        severity = "DEGRADED"
+    else:
+        severity = "CRITICAL"
+
+    return score, severity

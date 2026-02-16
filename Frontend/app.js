@@ -71,6 +71,7 @@ async function loadHosts() {
                         <strong>${h.name}</strong> 
                         <span class="status-indicator ${statusColor}"></span>
                         <small>(${h.address}${h.port ? ':' + h.port : ''})</small>
+                        <small>Health: ${h.health_score}% (${h.severity})</small>
                     </div>
                     <div class="button-group" style="display: flex; gap: 10px;">
                         <button class="history-btn"

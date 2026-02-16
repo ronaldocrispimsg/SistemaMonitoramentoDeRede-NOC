@@ -4,7 +4,7 @@ import time
 from sqlalchemy.orm import Session
 from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
-from Backend.checker import ping_host, tcp_check, resolve_dns_cached
+from Backend.checker import compute_health, ping_host, tcp_check, resolve_dns_cached
 
 scheduler = BackgroundScheduler()
 
@@ -112,6 +112,18 @@ def check_all_hosts():
                 tcp_result = None
                 if host.port:
                     tcp_result = tcp_check(ip, host.port)
+                score, severity = compute_health(ping_result, tcp_result)
+
+                host.health_score = score
+                host.severity = severity
+
+                if severity == "CRITICAL":
+                    db.add(Alert(
+                        host_id=host.id,
+                        alert_type="HEALTH_CRITICAL",
+                        old_status=old_status,
+                        new_status=f"score={score}"
+                    ))
 
                 # =====================
                 # STATUS ENGINE (CORRETO)

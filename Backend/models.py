@@ -33,6 +33,8 @@ class Host(Base):
     last_check = Column(DateTime)
 
     checks = relationship("CheckResult", back_populates="host")
+    health_score = Column(Integer, default=0)
+    severity = Column(String, default="UNKNOWN")
 
 
 class CheckResult(Base):
