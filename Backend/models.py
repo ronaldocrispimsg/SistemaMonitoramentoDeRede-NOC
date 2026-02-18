@@ -39,6 +39,9 @@ class Host(Base):
     sla_rolling_tcp = Column(Float)
     jitter_ms_ping = Column(Float)
     jitter_ms_tcp = Column(Float)
+    
+    slope = Column(Float)
+    trend = Column(String, default="UNKNOWN")
 
 
 

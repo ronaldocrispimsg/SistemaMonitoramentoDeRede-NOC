@@ -144,3 +144,55 @@ def refine_severity(base_severity, sla_ping=None, sla_tcp=None, jitter_ping=None
 
     return sev
 
+def calc_latency_trend_ping(db, host_id, window=10):
+
+    rows = (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "ping",
+            CheckResult.success == True,
+            CheckResult.latency != None
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+        .all()
+    )
+
+    if len(rows) < 5:
+        return None
+
+    values = [r.latency for r in rows]
+    values.reverse()
+
+    # slope simples
+    x = list(range(len(values)))
+
+    x_mean = sum(x)/len(x)
+    y_mean = sum(values)/len(values)
+
+    num = sum((xi-x_mean)*(yi-y_mean) for xi, yi in zip(x, values))
+    den = sum((xi-x_mean)**2 for xi in x)
+
+    if den == 0:
+        return 0
+
+    slope = num / den
+
+    return round(slope, 2)
+
+def classify_trend(slope):
+
+    if slope is None:
+        return "UNKNOWN"
+
+    if slope > 40:
+        return "FAST_DEGRADING"
+
+    if slope > 15:
+        return "DEGRADING"
+
+    if slope < -15:
+        return "IMPROVING"
+
+    return "STABLE"

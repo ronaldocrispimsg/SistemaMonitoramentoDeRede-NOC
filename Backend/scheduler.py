@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
-from Backend.metrics import calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_ping, calc_sla_rolling_tcp, refine_severity, compute_health
+from Backend.metrics import calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_ping, calc_sla_rolling_tcp, refine_severity, compute_health, calc_latency_trend_ping, classify_trend
 scheduler = BackgroundScheduler()
 
 ALERT_FAIL_THRESHOLD = 2
@@ -209,6 +209,9 @@ def check_all_hosts():
                 host.sla_rolling_tcp = calc_sla_rolling_tcp(db, host.id, 50)
                 host.jitter_ms_tcp = calc_jitter_tcp(db, host.id, 10)
 
+                host.slope = calc_latency_trend_ping(db, host.id, 10)
+                host.trend = classify_trend(host.slope)
+
                 host.severity = refine_severity(
                     host.severity,
                     host.sla_rolling_ping,
@@ -217,7 +220,7 @@ def check_all_hosts():
                     host.jitter_ms_tcp
                 )
 
-
+    
                 db.commit()
 
             except Exception as e:
