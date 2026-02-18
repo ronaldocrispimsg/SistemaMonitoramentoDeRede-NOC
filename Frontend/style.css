@@ -99,7 +99,7 @@ button {
 }
 
 .button-group button {
-    width: 160px;
+    width: 100px;
     padding: 5px;
     font-size: 0.85em;
     cursor: pointer;
@@ -186,9 +186,20 @@ button {
     border-radius: 3px;
 }
 
-
-
 .bg-success { background-color: #28a745; } /* Verde */
 .bg-danger { background-color: #dc3545; }  /* Vermelho */
 .bg-warning { background-color: #ffc107; } /* Amarelo */
 .bg-secondary { background-color: #6c757d; } /* Cinza */
+
+.severity-indicator {
+    display: inline-block;
+    font-weight: bold;
+    margin-left: 5px;
+    font-size: 14px;
+}
+
+.sev-healthy  { color: #2ecc71; }  /* verde */
+.sev-warning  { color: #f1c40f; }  /* amarelo */
+.sev-degraded { color: #e67e22; }  /* laranja */
+.sev-critical { color: #e74c3c; }  /* vermelho */
+.sev-unknown  { color: #888; }

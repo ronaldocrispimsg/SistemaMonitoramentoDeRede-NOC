@@ -53,13 +53,18 @@ async function loadHosts() {
         hosts.forEach(h => {
             let card = document.getElementById(`card-${h.name}`);
 
-            // DEFINIÇÃO DE CORES
             let statusColor = "bg-secondary";
             if (h.status === "UP") statusColor = "bg-success";
             else if (h.status === "DOWN") statusColor = "bg-danger";
             else if (h.status === "DEGRADED") statusColor = "bg-warning";
+            
+            let sevClass = "sev-unknown";
 
-            // SE O CARD NÃO EXISTE, CRIA A ESTRUTURA
+            if (h.severity === "HEALTHY") sevClass = "sev-healthy";
+            else if (h.severity === "WARNING") sevClass = "sev-warning";
+            else if (h.severity === "DEGRADED") sevClass = "sev-degraded";
+            else if (h.severity === "CRITICAL") sevClass = "sev-critical";
+
             if (!card) {
                 card = document.createElement("div");
                 card.className = "card";
@@ -71,16 +76,16 @@ async function loadHosts() {
                         <strong>${h.name}</strong> 
                         <span class="status-indicator ${statusColor}"></span>
                         <small>(${h.address}${h.port ? ':' + h.port : ''})</small>
-                        <small>Health: ${h.health_score}% (${h.severity})</small>
+                        </br><small>Health: ${h.health_score}%<span class="severity-indicator ${sevClass}">✚</span></small>
                     </div>
                     <div class="button-group" style="display: flex; gap: 10px;">
                         <button class="history-btn"
                             onclick="toggleHistory('${h.name}')">
-                            Ver histórico
+                            Histórico
                         </button>
                         <button class="latency-btn"
                             onclick="toggleLatencyChart('${h.name}')">
-                            Ver gráfico de latência
+                            Gráfico de latência
                         </button>
                         <button onclick="toggleHeatmap('${h.name}')">
                             Heatmap
