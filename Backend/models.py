@@ -35,6 +35,11 @@ class Host(Base):
     checks = relationship("CheckResult", back_populates="host")
     health_score = Column(Integer, default=0)
     severity = Column(String, default="UNKNOWN")
+    sla_rolling_ping = Column(Float)
+    sla_rolling_tcp = Column(Float)
+    jitter_ms_ping = Column(Float)
+    jitter_ms_tcp = Column(Float)
+
 
 
 class CheckResult(Base):

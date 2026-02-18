@@ -245,4 +245,62 @@ def heatmap(host_name: str, db: Session = Depends(get_db)):
 
     return sorted(result, key=lambda x: x["time"])
 
+@router.get("/host/sla_chart/{name}")
+def sla_chart(name: str, db: Session = Depends(get_db)):
+
+    host = db.query(Host).filter_by(name=name).first()
+    if not host:
+        return {"ping": [], "tcp": []}
+
+    window = 20
+
+    # -------------------
+    # PING
+    # -------------------
+    ping_rows = (
+        db.query(CheckResult)
+        .filter(CheckResult.host_id == host.id,
+                CheckResult.check_type == "ping")
+        .order_by(CheckResult.timestamp.asc())
+        .all()
+    )
+
+    ping_out = []
+
+    for i in range(window, len(ping_rows)+1):
+        chunk = ping_rows[i-window:i]
+        ok = sum(1 for r in chunk if r.success)
+
+        ping_out.append({
+            "time": chunk[-1].timestamp,
+            "sla": round(ok / window * 100, 2)
+        })
+
+    # -------------------
+    # TCP
+    # -------------------
+    tcp_rows = (
+        db.query(CheckResult)
+        .filter(CheckResult.host_id == host.id,
+                CheckResult.check_type == "tcp")
+        .order_by(CheckResult.timestamp.asc())
+        .all()
+    )
+
+    tcp_out = []
+
+    for i in range(window, len(tcp_rows)+1):
+        chunk = tcp_rows[i-window:i]
+        ok = sum(1 for r in chunk if r.success)
+
+        tcp_out.append({
+            "time": chunk[-1].timestamp,
+            "sla": round(ok / window * 100, 2)
+        })
+
+    return {
+        "ping": ping_out,
+        "tcp": tcp_out
+    }
+
 

@@ -4,8 +4,8 @@ import time
 from sqlalchemy.orm import Session
 from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
-from Backend.checker import compute_health, ping_host, tcp_check, resolve_dns_cached
-
+from Backend.checker import ping_host, tcp_check, resolve_dns_cached
+from Backend.metrics import calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_ping, calc_sla_rolling_tcp, refine_severity, compute_health
 scheduler = BackgroundScheduler()
 
 ALERT_FAIL_THRESHOLD = 2
@@ -203,6 +203,21 @@ def check_all_hosts():
                 if tcp_result:
                     trim_history(db, host.id, "tcp")
 
+                host.sla_rolling_ping = calc_sla_rolling_ping(db, host.id, 50)
+                host.jitter_ms_ping = calc_jitter_ping(db, host.id, 10)
+                
+                host.sla_rolling_tcp = calc_sla_rolling_tcp(db, host.id, 50)
+                host.jitter_ms_tcp = calc_jitter_tcp(db, host.id, 10)
+
+                host.severity = refine_severity(
+                    host.severity,
+                    host.sla_rolling_ping,
+                    host.sla_rolling_tcp,
+                    host.jitter_ms_ping,
+                    host.jitter_ms_tcp
+                )
+
+
                 db.commit()
 
             except Exception as e:
@@ -229,15 +244,14 @@ def trim_history(db, host_id, check_type, limit=100):
     for row in old:
         db.delete(row)
 
-
 def start_scheduler():
     scheduler.add_job(
         check_all_hosts,
         "interval",
-        seconds=10, 
+        seconds=10,
         id="check_hosts_job",
         replace_existing=True
     )
     scheduler.start()
-    
+
 
