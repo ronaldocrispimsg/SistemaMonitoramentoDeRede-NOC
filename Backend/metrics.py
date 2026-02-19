@@ -1,36 +1,56 @@
 from Backend.models import CheckResult
 
-def compute_health(ping_result, tcp_result):
+def compute_health(ping_result, tcp_result, http_result):
 
     score = 0
 
     # ---------- Ping ----------
     if ping_result["success"]:
-        score += 40
+        score += 30
 
         lat = ping_result.get("latency") or 9999
 
         if lat < 100:
-            score += 20
+            score += 15
         elif lat < 300:
-            score += 10
+            score += 8
 
     # ---------- TCP ----------
     if tcp_result and tcp_result["success"]:
-        score += 40
+        score += 30
 
-    if not ping_result["success"] and tcp_result and tcp_result["success"]:
+    elif not ping_result["success"] and tcp_result and tcp_result["success"]:
         score += 30  # serviço responde mas ICMP bloqueado
 
-    # ---------- Severidade ----------
-    if score >= 90:
-        severity = "HEALTHY"
-    elif score >= 70:
-        severity = "WARNING"
-    elif score >= 40:
-        severity = "DEGRADED"
-    else:
-        severity = "CRITICAL"
+    # ---------- HTTP ----------
+    if http_result:
+
+        status_code = http_result.get("status_code")
+
+        # HTTP OK
+        if http_result["success"]:
+            score += 25
+
+            if http_result.get("latency") and http_result["latency"] < 500:
+                score += 10
+
+        # HTTP 500 = aplicação quebrada
+        elif status_code and 500 <= status_code < 600:
+            score -= 20  # penalidade forte
+
+        # HTTP 400 = erro cliente
+        elif status_code and 400 <= status_code < 500:
+            score -= 10
+
+        # ---------- Severidade ----------
+        if score >= 85:
+            severity = "HEALTHY"
+        elif score >= 65:
+            severity = "WARNING"
+        elif score >= 40:
+            severity = "DEGRADED"
+        else:
+            severity = "CRITICAL"
 
     return score, severity
 
@@ -65,6 +85,26 @@ def calc_sla_rolling_tcp(db, host_id, window=50):
 
     ok = sum(1 for r in rows if r.success)
     return round(ok / len(rows) * 100, 2)
+
+def calc_sla_rolling_http(db, host_id, window=50):
+
+    rows = (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "http"
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+        .all()
+    )
+
+    if not rows:
+        return None
+
+    success_count = sum(1 for r in rows if r.success)
+
+    return round((success_count / len(rows)) * 100, 2)
 
 def calc_jitter_ping(db, host_id, window=10):
 
@@ -116,12 +156,37 @@ def calc_jitter_tcp(db, host_id, window=10):
 
     return round(sum(diffs)/len(diffs), 2)
 
-def refine_severity(base_severity, sla_ping=None, sla_tcp=None, jitter_ping=None, jitter_tcp=None):
+def calc_jitter_http(db, host_id, window=10):
+
+    rows = (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "http",
+            CheckResult.success == True,
+            CheckResult.latency != None
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+        .all()
+    )
+
+    if len(rows) < 3:
+        return None
+
+    latencies = [r.latency for r in rows]
+    latencies.reverse()
+
+    diffs = [abs(latencies[i] - latencies[i-1]) for i in range(1, len(latencies))]
+
+    return round(sum(diffs) / len(diffs), 2)
+
+def refine_severity(base_severity, sla_ping=None, sla_tcp=None, sla_http=None, jitter_ping=None, jitter_tcp=None, jitter_http=None):
     
     sev = base_severity
 
     # ---------- SLA pior manda ----------
-    slas = [s for s in (sla_ping, sla_tcp) if s is not None]
+    slas = [s for s in (sla_ping, sla_tcp, sla_http) if s is not None]
 
     if slas:
         worst_sla = min(slas)
@@ -132,14 +197,14 @@ def refine_severity(base_severity, sla_ping=None, sla_tcp=None, jitter_ping=None
             sev = "WARNING"
 
     # ---------- Jitter pior manda ----------
-    jitters = [j for j in (jitter_ping, jitter_tcp) if j is not None]
+    jitters = [j for j in (jitter_ping, jitter_tcp, jitter_http) if j is not None]
 
     if jitters:
         worst_jitter = max(jitters)
 
-        if worst_jitter > 300:
+        if worst_jitter > 400:
             return "CRITICAL"
-        elif worst_jitter > 150 and sev not in ("CRITICAL"):
+        elif worst_jitter > 200 and sev not in ("CRITICAL"):
             sev = "DEGRADED"
 
     return sev
@@ -181,6 +246,40 @@ def calc_latency_trend_ping(db, host_id, window=10):
 
     return round(slope, 2)
 
+def calc_latency_trend_http(db, host_id, window=10):
+
+    rows = (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "http",
+            CheckResult.success == True,
+            CheckResult.latency != None
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+        .all()
+    )
+
+    if len(rows) < 5:
+        return None
+
+    values = [r.latency for r in rows]
+    values.reverse()
+
+    x = list(range(len(values)))
+
+    x_mean = sum(x) / len(x)
+    y_mean = sum(values) / len(values)
+
+    num = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, values))
+    den = sum((xi - x_mean) ** 2 for xi in x)
+
+    if den == 0:
+        return 0
+
+    return round(num / den, 2)
+
 def classify_trend(slope):
 
     if slope is None:
@@ -196,3 +295,17 @@ def classify_trend(slope):
         return "IMPROVING"
 
     return "STABLE"
+
+def classify_trend_http(slope):
+
+    if slope is None:
+        return "UNKNOWN"
+
+    if slope < 10:
+        return "STABLE"
+    elif slope < 40:
+        return "RISING"
+    elif slope < 80:
+        return "DEGRADING"
+    else:
+        return "CRITICAL"

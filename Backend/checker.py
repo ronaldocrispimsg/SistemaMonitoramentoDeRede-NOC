@@ -3,6 +3,7 @@ import time
 import socket
 import json
 import re
+import requests
 import dns.resolver
 from datetime import datetime, timedelta
 from Backend.models import DNSCache
@@ -173,3 +174,61 @@ def tcp_check(ip: str, port: int, timeout: int = 5):
         except:
              pass
 
+def http_check(url: str, timeout=3):
+
+    start = time.time()
+
+    try:
+        r = requests.get(
+            url,
+            timeout=timeout,
+            allow_redirects=True,
+            headers={
+                "User-Agent": "NOC-Lite-Monitor"
+            }
+        )
+
+        latency = round((time.time() - start) * 1000, 2)
+
+        status_code = r.status_code
+
+        if 200 <= status_code < 400:
+            success = True
+        elif 400 <= status_code < 500:
+            success = False
+        elif 500 <= status_code < 600:
+            success = False
+        else:
+            success = False
+
+
+        return {
+            "success": success,
+            "latency": latency,
+            "status_code": r.status_code,
+            "error": None
+        }
+
+    except requests.exceptions.Timeout:
+        return {
+            "success": False,
+            "latency": None,
+            "status_code": None,
+            "error": "timeout"
+        }
+
+    except requests.exceptions.ConnectionError:
+        return {
+            "success": False,
+            "latency": None,
+            "status_code": None,
+            "error": "connection_error"
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "latency": None,
+            "status_code": None,
+            "error": str(e)
+        }

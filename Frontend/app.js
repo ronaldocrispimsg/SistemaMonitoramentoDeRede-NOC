@@ -10,11 +10,13 @@ document.getElementById("hostForm").addEventListener("submit", async (e) => {
     const nameInput = document.getElementById("name");
     const addressInput = document.getElementById("address");
     const portInput = document.getElementById("port");
-
+    const httpUrlInput = document.getElementById("http_url");
+    
     const data = {
         name: nameInput.value,
         address: addressInput.value,
-        port: portInput.value ? parseInt(portInput.value) : null
+        port: portInput.value ? parseInt(portInput.value) : null,
+        http_url: httpUrlInput.value
     };
 
     try {
@@ -29,6 +31,7 @@ document.getElementById("hostForm").addEventListener("submit", async (e) => {
             nameInput.value = "";
             addressInput.value = "";
             portInput.value = "";
+            httpUrlInput.value = "";
             loadHosts();
         } else {
             const errorData = await response.json();
@@ -81,6 +84,9 @@ async function loadHosts() {
                         </br><small>Variacao na latencia (ping): ${h.jitter_ms_ping ?? "N/A"}ms</small>
                         </br><small>Taxa de sucesso (tcp): ${h.sla_rolling_tcp ?? "N/A"}%</small>
                         </br><small>Variacao na latencia (tcp): ${h.jitter_ms_tcp ?? "N/A"}ms</small>
+                        </br><small>Taxa de sucesso (http): ${h.sla_rolling_http ?? "N/A"}%</small>
+                        </br><small>Variacao na latencia (http): ${h.jitter_ms_http ?? "N/A"}ms</small>
+                        </br><small>Tendencia (http): ${h.trend_http ?? "N/A"}</small>
                     </div>
                     <div class="button-group" style="display: flex; gap: 10px;">
                         <button class="history-btn"
@@ -97,7 +103,7 @@ async function loadHosts() {
                         <button onclick="toggleHeatmap('${h.name}')">
                             Heatmap
                         </button>
-                        <button onclick="openEditModal('${h.name}','${h.address}','${h.port ?? ""}')">
+                        <button class="edit-btn">
                             Editar
                         </button>
                         <button class="delete-btn"
@@ -121,7 +127,19 @@ async function loadHosts() {
 
             `;
 
-           div.appendChild(card);
+            div.appendChild(card);
+            
+            const editBtn = card.querySelector(".edit-btn");
+
+            editBtn.addEventListener("click", () => {
+                openEditModal(
+                    h.name,
+                    h.address,
+                    h.port ?? "",
+                    h.http_url ?? ""
+                );
+            });
+
             } else {
                 // SE JÁ EXISTE, SÓ ATUALIZA A BOLINHA DE STATUS PRINCIPAL
                 const indicator = card.querySelector(".status-indicator");
@@ -150,9 +168,11 @@ async function loadLastResult(name) {
 
     const lastPing = data.checks.find(c => c.type === "ping");
     const lastTcp  = data.checks.find(c => c.type === "tcp");
+    const lastHttp = data.checks.find(c => c.type === "http");
 
     const pingDot = lastPing?.success ? "bg-success" : "bg-danger";
     const tcpDot  = lastTcp?.success ? "bg-success" : "bg-danger";
+    const httpDot = lastHttp?.success ? "bg-success" : "bg-danger";
 
     box.innerHTML = `
         <div>
@@ -163,6 +183,11 @@ async function loadLastResult(name) {
         <div>
             <span class="status-indicator ${tcpDot}"></span>
             TCP: ${lastTcp.latency ?? "N/A"} ms
+        </div>` : ''}
+        ${lastHttp ? `
+        <div>
+            <span class="status-indicator ${httpDot}"></span>
+            HTTP: ${lastHttp.latency ?? "N/A"} ms ${lastHttp.status_code ?? lastHttp.error ?? ""}
         </div>` : ''}
     `;
 }
@@ -254,12 +279,13 @@ async function toggleHeatmap(name) {
 
 let currentEditHost = null;
 
-function openEditModal(name, ip, port) {
+function openEditModal(name, ip, port, httpUrl) {
     currentEditHost = name;
 
     document.getElementById("modal-name").value = name;
     document.getElementById("modal-ip").value = ip;
     document.getElementById("modal-port").value = port;
+    document.getElementById("modal-http").value = httpUrl || "";
 
     document.getElementById("editModal").classList.remove("hidden");
 }
@@ -269,16 +295,18 @@ function closeModal() {
 }
 
 async function submitModalEdit() {
-    const newName = document.getElementById("modal-name").value;
-    const newIp = document.getElementById("modal-ip").value;
-    const newPort = document.getElementById("modal-port").value;
+    const newName = document.getElementById("modal-name").value.trim();
+    const newIp = document.getElementById("modal-ip").value.trim();
+    const newPort = document.getElementById("modal-port").value.trim();
+    const newHttp = document.getElementById("modal-http").value.trim();
 
     const res = await fetch(`${API}/host/update/${currentEditHost}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             address: newIp,
-            port: newPort ? parseInt(newPort) : null
+            port: newPort ? parseInt(newPort) : null,
+            http_url: newHttp || null
         })
     });
 
@@ -288,6 +316,13 @@ async function submitModalEdit() {
     } else {
         alert("Erro ao salvar");
     }
+        window.onclick = function(event) {
+        const modal = document.getElementById("editModal");
+        if (event.target === modal) {
+            closeModal();
+        }
+    };
+
 }
 
 async function loadLatencyChart(name) {
@@ -298,6 +333,7 @@ async function loadLatencyChart(name) {
 
     const ping = data.checks.filter(c => c.type === "ping");
     const tcp  = data.checks.filter(c => c.type === "tcp");
+    const http = data.checks.filter(c => c.type === "http");
 
     const labels = ping.map(c =>
         new Date(c.timestamp).toLocaleTimeString()
@@ -305,6 +341,7 @@ async function loadLatencyChart(name) {
 
     const pingData = ping.map(c => c.latency);
     const tcpData  = tcp.map(c => c.latency);
+    const httpData = http.map(c => c.latency);
 
     const ctx = document.getElementById("chart-" + name);
 
@@ -323,6 +360,10 @@ async function loadLatencyChart(name) {
                     label: "TCP",
                     data: tcpData
                 }
+                ,{
+                    label: "HTTP",
+                    data: httpData
+                }
             ]
         },
         options: {
@@ -339,6 +380,7 @@ async function loadSLAChart(name) {
 
     const ping = data.ping || [];
     const tcp  = data.tcp || [];
+    const http = data.http || [];
 
     // labels baseadas no ping (principal)
     const labels = ping.map(p =>
@@ -347,6 +389,7 @@ async function loadSLAChart(name) {
 
     const pingValues = ping.map(p => p.sla);
     const tcpValues  = tcp.map(p => p.sla);
+    const httpValues = http.map(p => p.sla);
 
     const ctx = document.getElementById("sla-chart-" + name);
 
@@ -367,6 +410,10 @@ async function loadSLAChart(name) {
                 {
                     label: "SLA TCP %",
                     data: tcpValues
+                },
+                {
+                    label: "SLA HTTP %",
+                    data: httpValues
                 }
             ]
         },

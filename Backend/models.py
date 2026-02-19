@@ -11,6 +11,7 @@ class Host(Base):
     name = Column(String, unique=True, index=True)
     address = Column(String)
     port = Column(Integer, nullable=True)
+    http_url = Column(String, nullable=True)
 
     active = Column(Boolean, default=True)
     active_time = Column(DateTime, nullable=True)
@@ -35,13 +36,20 @@ class Host(Base):
     checks = relationship("CheckResult", back_populates="host")
     health_score = Column(Integer, default=0)
     severity = Column(String, default="UNKNOWN")
-    sla_rolling_ping = Column(Float)
-    sla_rolling_tcp = Column(Float)
-    jitter_ms_ping = Column(Float)
-    jitter_ms_tcp = Column(Float)
     
-    slope = Column(Float)
+    sla_rolling_ping = Column(Float, nullable=True)
+    sla_rolling_tcp = Column(Float, nullable=True)
+    sla_rolling_http = Column(Float, nullable=True)
+
+    jitter_ms_ping = Column(Float, nullable=True)
+    jitter_ms_tcp = Column(Float, nullable=True)
+    jitter_ms_http = Column(Float, nullable=True)
+    
+    slope = Column(Float, nullable=True)
     trend = Column(String, default="UNKNOWN")
+
+    slope_http = Column(Float, nullable=True)
+    trend_http = Column(String, default="UNKNOWN")
 
 
 

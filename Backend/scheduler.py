@@ -4,8 +4,8 @@ import time
 from sqlalchemy.orm import Session
 from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
-from Backend.checker import ping_host, tcp_check, resolve_dns_cached
-from Backend.metrics import calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_ping, calc_sla_rolling_tcp, refine_severity, compute_health, calc_latency_trend_ping, classify_trend
+from Backend.checker import ping_host, tcp_check, resolve_dns_cached, http_check
+from Backend.metrics import calc_jitter_http, calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_http, calc_sla_rolling_ping, calc_sla_rolling_tcp, refine_severity, compute_health, calc_latency_trend_ping, classify_trend, calc_latency_trend_http, classify_trend_http
 scheduler = BackgroundScheduler()
 
 ALERT_FAIL_THRESHOLD = 2
@@ -107,12 +107,38 @@ def check_all_hosts():
                 # =====================
                 # CHECKS
                 # =====================
+                
+                #ping
                 ping_result = ping_host(ip)
 
+                #tcp
                 tcp_result = None
                 if host.port:
                     tcp_result = tcp_check(ip, host.port)
-                score, severity = compute_health(ping_result, tcp_result)
+                
+                #http
+                http_result = None
+                url = None
+
+                # Se tiver URL customizada, usa ela
+                if host.http_url:
+                    url = host.http_url
+
+                # Se não tiver, monta automaticamente
+                elif host.port in (80, 443):
+                    protocol = "https" if host.port == 443 else "http"
+                    url = f"{protocol}://{host.address}"
+
+                # Porta diferente mas definida
+                elif host.port:
+                    url = f"http://{host.address}:{host.port}"
+
+                # Executa check se montou URL
+                if url:
+                    http_result = http_check(url)
+
+                    
+                score, severity = compute_health(ping_result, tcp_result, http_result)
 
                 host.health_score = score
                 host.severity = severity
@@ -128,9 +154,16 @@ def check_all_hosts():
                 # =====================
                 # STATUS ENGINE (CORRETO)
                 # =====================
-                if tcp_result and tcp_result["success"]:
-                    new_status = "UP"
 
+                if http_result and not http_result["success"]:
+                    new_status = "DEGRADED"
+
+                elif http_result and http_result.get("status_code") and 500 <= http_result["status_code"] < 600:
+                    new_status = "CRITICAL"
+                
+                elif not ping_result["success"] and not tcp_result:
+                    new_status = "DOWN"
+                    
                 elif ping_result["success"]:
                     new_status = "UP"
 
@@ -199,9 +232,23 @@ def check_all_hosts():
                         error=tcp_result.get("error")
                     ))
 
+                if http_result:
+                    db.add(CheckResult(
+                        host_id=host.id,
+                        host_name=host.name,
+                        check_type="http",
+                        success=http_result["success"],
+                        latency=http_result.get("latency"),
+                        error=http_result.get("error")
+                    ))
+
                 trim_history(db, host.id, "ping")
+
                 if tcp_result:
                     trim_history(db, host.id, "tcp")
+
+                if http_result:
+                    trim_history(db, host.id, "http")
 
                 host.sla_rolling_ping = calc_sla_rolling_ping(db, host.id, 50)
                 host.jitter_ms_ping = calc_jitter_ping(db, host.id, 10)
@@ -209,15 +256,24 @@ def check_all_hosts():
                 host.sla_rolling_tcp = calc_sla_rolling_tcp(db, host.id, 50)
                 host.jitter_ms_tcp = calc_jitter_tcp(db, host.id, 10)
 
+                host.sla_rolling_http = calc_sla_rolling_http(db, host.id, 50)
+                host.jitter_ms_http = calc_jitter_http(db, host.id, 10) 
+
                 host.slope = calc_latency_trend_ping(db, host.id, 10)
                 host.trend = classify_trend(host.slope)
 
+                host.slope_http = calc_latency_trend_http(db, host.id, 10)
+                host.trend_http = classify_trend_http(host.slope_http)
+
+    
                 host.severity = refine_severity(
                     host.severity,
                     host.sla_rolling_ping,
                     host.sla_rolling_tcp,
+                    host.sla_rolling_http,
                     host.jitter_ms_ping,
-                    host.jitter_ms_tcp
+                    host.jitter_ms_tcp,
+                    host.jitter_ms_http
                 )
 
     

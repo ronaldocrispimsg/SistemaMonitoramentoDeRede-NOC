@@ -44,7 +44,8 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
         host = Host(
             name=data.name,
             address=data.address,
-            port=data.port
+            port=data.port,
+            http=data.http_url
         )
         db.add(host)
         db.commit()
@@ -298,9 +299,32 @@ def sla_chart(name: str, db: Session = Depends(get_db)):
             "sla": round(ok / window * 100, 2)
         })
 
+    # -------------------
+    # HTTP
+    # -------------------
+    http_rows = (
+        db.query(CheckResult)
+        .filter(CheckResult.host_id == host.id,
+                CheckResult.check_type == "http")
+        .order_by(CheckResult.timestamp.asc())
+        .all()
+    )
+
+    http_out = []
+
+    for i in range(window, len(http_rows)+1):
+        chunk = http_rows[i-window:i]
+        ok = sum(1 for r in chunk if r.success)
+
+        http_out.append({
+            "time": chunk[-1].timestamp,
+            "sla": round(ok / window * 100, 2)
+        })
+
     return {
         "ping": ping_out,
-        "tcp": tcp_out
+        "tcp": tcp_out,
+        "http": http_out
     }
-
+    
 
