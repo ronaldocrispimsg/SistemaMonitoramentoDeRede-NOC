@@ -103,11 +103,10 @@ async function loadHosts() {
                         <button onclick="toggleHeatmap('${h.name}')">
                             Heatmap
                         </button>
-                        <button class="edit-btn">
+                        <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}')">
                             Editar
                         </button>
-                        <button class="delete-btn"
-                            onclick="softDeleteHost('${h.name}')">
+                        <button class="delete-btn" onclick="softDeleteHost('${h.name}')">
                             Deletar
                         </button>
                     </div>
@@ -129,23 +128,12 @@ async function loadHosts() {
 
             div.appendChild(card);
             
-            const editBtn = card.querySelector(".edit-btn");
-
-            editBtn.addEventListener("click", () => {
-                openEditModal(
-                    h.name,
-                    h.address,
-                    h.port ?? "",
-                    h.http_url ?? ""
-                );
-            });
-
             } else {
                 // SE JÁ EXISTE, SÓ ATUALIZA A BOLINHA DE STATUS PRINCIPAL
                 const indicator = card.querySelector(".status-indicator");
                 indicator.className = `status-indicator ${statusColor}`;
             }
-
+            
             // ATUALIZA OS DADOS DE PING/TCP
             loadLastResult(h.name);
 
@@ -285,7 +273,7 @@ function openEditModal(name, ip, port, httpUrl) {
     document.getElementById("modal-name").value = name;
     document.getElementById("modal-ip").value = ip;
     document.getElementById("modal-port").value = port;
-    document.getElementById("modal-http").value = httpUrl || "";
+    document.getElementById("modal-http-url").value = httpUrl || "";
 
     document.getElementById("editModal").classList.remove("hidden");
 }
@@ -295,10 +283,10 @@ function closeModal() {
 }
 
 async function submitModalEdit() {
-    const newName = document.getElementById("modal-name").value.trim();
-    const newIp = document.getElementById("modal-ip").value.trim();
-    const newPort = document.getElementById("modal-port").value.trim();
-    const newHttp = document.getElementById("modal-http").value.trim();
+    const newName = document.getElementById("modal-name").value;
+    const newIp = document.getElementById("modal-ip").value;
+    const newPort = document.getElementById("modal-port").value;
+    const newHttp = document.getElementById("modal-http-url").value;
 
     const res = await fetch(`${API}/host/update/${currentEditHost}`, {
         method: "PUT",
@@ -316,13 +304,6 @@ async function submitModalEdit() {
     } else {
         alert("Erro ao salvar");
     }
-        window.onclick = function(event) {
-        const modal = document.getElementById("editModal");
-        if (event.target === modal) {
-            closeModal();
-        }
-    };
-
 }
 
 async function loadLatencyChart(name) {
@@ -531,3 +512,10 @@ setInterval(checkAlerts, 5000);
 
 document.getElementById("refreshBtn").addEventListener("click", loadHosts);
 window.onload = loadHosts;
+
+window.onclick = function(event) {
+        const modal = document.getElementById("editModal");
+        if (event.target === modal) {
+            closeModal();
+        }
+    };

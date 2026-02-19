@@ -203,3 +203,15 @@ button {
 .sev-degraded { color: #e67e22; }  /* laranja */
 .sev-critical { color: #e74c3c; }  /* vermelho */
 .sev-unknown  { color: #888; }
+
+/* Remove setas no Chrome, Safari, Edge e Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Remove setas no Firefox */
+input[type=number] {
+  -moz-appearance: textfield;
+}

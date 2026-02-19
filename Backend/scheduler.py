@@ -167,6 +167,9 @@ def check_all_hosts():
                 elif ping_result["success"]:
                     new_status = "UP"
 
+                elif not ping_result["success"] and tcp_result and tcp_result["success"]:
+                    new_status = "UP"  # Condicao para ICMP bloqueado, gov.br ou site do if
+
                 elif tcp_result and not tcp_result["success"]:
                     new_status = "DEGRADED"
 

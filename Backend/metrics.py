@@ -36,11 +36,14 @@ def compute_health(ping_result, tcp_result, http_result):
 
         # HTTP 500 = aplicação quebrada
         elif status_code and 500 <= status_code < 600:
-            score -= 20  # penalidade forte
+            score -= 20
 
         # HTTP 400 = erro cliente
         elif status_code and 400 <= status_code < 500:
             score -= 10
+
+        # score maximo e minimo
+        score = max(0, min(100, score))
 
         # ---------- Severidade ----------
         if score >= 85:

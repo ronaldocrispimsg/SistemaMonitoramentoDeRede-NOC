@@ -18,7 +18,7 @@
     <form id="hostForm">
         <input id="name" placeholder="Nome" required>
         <input id="address" placeholder="Endereço/IP" required>
-        <input id="port" placeholder="Porta (opcional)">
+        <input id="port" type="number" min="1" max="65535" placeholder="Porta" required>
         <input id="http_url" placeholder="URL HTTP (opcional)">
         <button type="submit">Cadastrar</button>
     </form>
@@ -41,6 +41,7 @@
     <input id="modal-name" disabled>
     <input id="modal-ip">
     <input id="modal-port">
+    <input id="modal-http-url">
 
     <div class="modal-actions">
       <button onclick="submitModalEdit()">Salvar</button>

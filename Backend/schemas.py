@@ -9,6 +9,7 @@ class HostCreate(BaseModel):
 class HostUpdate(BaseModel):
     address: str
     port: Optional[int] = None
+    http_url: Optional[str] = None
 
 class HostCreate(BaseModel):
     name: str

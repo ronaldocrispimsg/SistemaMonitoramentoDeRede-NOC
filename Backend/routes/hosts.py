@@ -5,6 +5,7 @@ from Backend.database import SessionLocal
 from Backend.models import CheckResult, Host, Alert
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
 from Backend.schemas import HostCreate, HostUpdate
+from Backend.utils import normalize_http_url
 
 router = APIRouter()
 
@@ -33,6 +34,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
             existing_host.last_check = None
             existing_host.address = data.address
             existing_host.port = data.port
+            existing_host.http_url = data.http_url
 
             db.commit()
             db.refresh(existing_host)
@@ -45,7 +47,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
             name=data.name,
             address=data.address,
             port=data.port,
-            http=data.http_url
+            http_url=data.http_url
         )
         db.add(host)
         db.commit()
@@ -175,6 +177,16 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db))
     
     host.address = data.address
     host.port = data.port
+    
+    if data.http_url is not None:
+
+        normalized_url = normalize_http_url(
+            data.http_url,
+            data.port or host.port
+        )
+
+        host.http_url = normalized_url
+
     db.commit()
 
     return {"detail": "Host atualizado com sucesso"}
