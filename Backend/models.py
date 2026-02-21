@@ -84,6 +84,17 @@ class Alert(Base):
 
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+class Incident(Base):
+    __tablename__ = "incidents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    host_name = Column(String, index=True)
+    status = Column(String, default="OPEN")  # OPEN / CLOSED
+    reason = Column(String)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+
 class DNSCache(Base):
     __tablename__ = "dns_cache"
 

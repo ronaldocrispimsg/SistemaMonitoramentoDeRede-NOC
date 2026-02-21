@@ -6,6 +6,7 @@ from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached, http_check
 from Backend.metrics import calc_jitter_http, calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_http, calc_sla_rolling_ping, calc_sla_rolling_tcp, refine_severity, compute_health, calc_latency_trend_ping, classify_trend, calc_latency_trend_http, classify_trend_http
+from Backend.utils import close_incident, open_incident
 scheduler = BackgroundScheduler()
 
 ALERT_FAIL_THRESHOLD = 2
@@ -142,6 +143,12 @@ def check_all_hosts():
 
                 host.health_score = score
                 host.severity = severity
+
+                if severity == "CRITICAL":
+                    open_incident(db, host.name, "Host indisponível")
+
+                elif severity == "HEALTHY":
+                    close_incident(db, host.name)
 
                 if severity == "CRITICAL":
                     db.add(Alert(

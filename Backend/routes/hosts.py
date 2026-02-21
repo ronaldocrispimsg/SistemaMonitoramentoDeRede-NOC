@@ -20,6 +20,7 @@ def get_db():
 @router.post("/host/create")
 def create_host(data: HostCreate, db: Session = Depends(get_db)):
     existing_host = db.query(Host).filter(Host.name == data.name).first()
+    resolved = None
 
     if is_ip(data.address):
         resolved = reverse_dns(data.address)
@@ -37,8 +38,11 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
             existing_host.last_check = None
             existing_host.address = data.address
             existing_host.port = data.port
-            existing_host.http_url = data.http_url
             existing_host.hostname_resolved = resolved
+
+            if data.http_url is not None:
+                normalized_url = normalize_http_url(data.http_url, data.port or existing_host.port)
+                existing_host.http_url = normalized_url
 
             db.commit()
             db.refresh(existing_host)
@@ -52,8 +56,12 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
             address=data.address,
             port=data.port,
             hostname_resolved=resolved,
-            http_url=data.http_url
         )
+
+        if data.http_url is not None:
+            normalized_url = normalize_http_url(data.http_url, data.port or host.port)
+            host.http_url = normalized_url
+
         db.add(host)
         db.commit()
         db.refresh(host)
@@ -172,7 +180,8 @@ def delete_host(host_name: str, db: Session = Depends(get_db)):
 @router.put("/host/update/{host_name}")
 def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db)):
     host = db.query(Host).filter(Host.name == host_name).first()
-
+    resolved = None
+    
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
     
@@ -189,12 +198,7 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db))
     host.hostname_resolved = resolved
 
     if data.http_url is not None:
-
-        normalized_url = normalize_http_url(
-            data.http_url,
-            data.port or host.port
-        )
-
+        normalized_url = normalize_http_url(data.http_url, data.port or host.port)
         host.http_url = normalized_url
 
     db.commit()
