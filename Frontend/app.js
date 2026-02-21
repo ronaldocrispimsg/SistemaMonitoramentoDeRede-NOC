@@ -1,6 +1,10 @@
 const API = "http://127.0.0.1:8000";
 const charts = {};
 
+if (Notification.permission !== "granted") {
+    Notification.requestPermission();
+}
+
 // ======================
 // Helper: Requisições Autenticadas
 // ======================
@@ -11,13 +15,23 @@ async function fetchWithAuth(url, options = {}) {
         ...options.headers,
         "Authorization": `Bearer ${token}`
     };
-    const response = await fetch(url, { ...options, headers });
-    
-    if (response.status === 401) {
-        console.warn("Token expirado ou inválido.");
-        // Opcional: localStorage.removeItem("token");
+
+    try {
+        const response = await fetch(url, { ...options, headers });
+        
+        if (response.status === 401) {
+            alert("Sessão expirada. Por favor, faça login novamente.");
+            localStorage.clear();
+            window.location.reload();
+            return null;
+        }
+        
+        return response;
+    } catch (error) {
+        console.error("Erro de conexão:", error);
+        // Opcional: mostrar um aviso visual discreto na tela
+        return null;
     }
-    return response;
 }
 
 // ======================
@@ -139,7 +153,6 @@ async function loadHosts() {
             return;
         }
         const hosts = await res.json();
-        div.innerHTML = "";
 
         hosts.forEach(h => {
             let card = document.getElementById(`card-${h.name}`);
@@ -155,11 +168,12 @@ async function loadHosts() {
             else if (h.severity === "WARNING") sevClass = "sev-warning";
             else if (h.severity === "DEGRADED") sevClass = "sev-degraded";
             else if (h.severity === "CRITICAL") sevClass = "sev-critical";
-
+            
             if (!card) {
                 card = document.createElement("div");
                 card.className = "card";
                 card.id = `card-${h.name}`;
+                div.appendChild(card);
 
             card.innerHTML = `
                 <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
@@ -223,7 +237,10 @@ async function loadHosts() {
                 </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
                 <div id="heatmap-${h.name}" class="hidden heatmap-box"></div>
-
+                <small style="color: #666;">
+                    <b>MTTR:</b> ${h.mttr > 0 ? (h.mttr / 60).toFixed(1) + ' min' : 'N/A'} | 
+                    <b>Disp ultimos(10m):</b> ${h.availability_10m.toFixed(2)}%
+                </small>
             `;
 
             div.appendChild(card);
@@ -252,6 +269,9 @@ async function loadLastResult(name) {
     const box = document.getElementById("result-" + name);
 
     const res = await fetchWithAuth(`${API}/host/history/${name}`);
+    
+    if (!res || !res.ok) return;
+
     const data = await res.json();
 
     const lastPing = data.checks.find(c => c.type === "ping");
@@ -286,6 +306,9 @@ async function loadHistory(name) {
 
     try {
         const res = await fetchWithAuth(`${API}/host/history/${name}`);
+
+        if (!res || !res.ok) return;
+
         const data = await res.json();
 
         if (!data.checks.length) {
@@ -410,6 +433,9 @@ async function loadLatencyChart(name) {
     if (charts[name]) charts[name].destroy();
 
     const res = await fetchWithAuth(`${API}/host/history/${name}`);
+    
+    if (!res || !res.ok) return;
+
     const data = await res.json();
 
     const ping = data.checks.filter(c => c.type === "ping");
@@ -457,6 +483,9 @@ async function loadLatencyChart(name) {
 async function loadSLAChart(name) {
 
     const res = await fetchWithAuth(`${API}/host/sla_chart/${name}`);
+    
+    if (!res || !res.ok) return;
+
     const data = await res.json();
 
     const ping = data.ping || [];
@@ -578,6 +607,9 @@ async function softDeleteHost(name) {
 async function loadHeatmap(name) {
 
     const res = await fetchWithAuth(`${API}/host/heatmap/${name}`);
+    
+    if (!res || !res.ok) return;
+
     const data = await res.json();
 
     const box = document.getElementById("heatmap-" + name);
@@ -633,6 +665,9 @@ async function loadAvailability(name) {
 
     try {
         const response = await fetchWithAuth(`${API}/hosts/metrics/${name}/history`);
+        
+        if (!response || !response.ok) return;
+
         const data = await response.json();
 
         const labels = data.map(p => new Date(p.timestamp).toLocaleTimeString());
@@ -673,6 +708,9 @@ async function loadErrorBudget(name) {
 
     try {
         const response = await fetchWithAuth(`${API}/hosts/metrics/${name}/error-budget`);
+        
+        if (!response || !response.ok) return;
+
         const data = await response.json();
 
         if (charts[`eb-${name}`]) charts[`eb-${name}`].destroy();
@@ -701,11 +739,64 @@ async function loadErrorBudget(name) {
     }
 }
 
+async function loadTimeline() {
+    const container = document.getElementById("incidentTimeline");
+    if (!container) return;
+
+    try {
+        const res = await fetchWithAuth(`${API}/incidents/latest`);
+        if (!res || !res.ok) return;
+
+        const incidents = await res.json();
+        
+        container.innerHTML = incidents.map(inc => {
+            const isClosed = inc.status === "CLOSED";
+            const itemClass = isClosed ? "text-success" : "text-danger";
+            const timeStr = new Date(inc.started_time).toLocaleString();
+            const durationStr = inc.duration ? `(Duração: ${(inc.duration / 60).toFixed(1)} min)` : "(Ainda aberto)";
+
+            return `
+                <div class="timeline-item ${itemClass}">
+                    <strong>${inc.host_name}</strong> - 
+                    <span>${isClosed ? "RECUPERADO" : "INDISPONÍVEL"}</span>
+                    <br>
+                    <small>${timeStr} ${durationStr}</small>
+                    <p style="margin: 4px 0 0 0; font-size: 0.85em; color: #666;">${inc.reason}</p>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error("Erro ao carregar timeline:", err);
+    }
+}
+
+function filterHosts() {
+    const searchTerm = document.getElementById("searchInput").value.toLowerCase();
+    const statusFilter = document.getElementById("statusFilter").value;
+    const cards = document.querySelectorAll(".card");
+
+    cards.forEach(card => {
+        const hostName = card.querySelector(".host-title").innerText.toLowerCase();
+        const hostAddr = card.querySelector(".host-addr").innerText.toLowerCase();
+        const indicator = card.querySelector(".status-indicator");
+        
+        const matchesSearch = hostName.includes(searchTerm) || hostAddr.includes(searchTerm);
+        const matchesStatus = statusFilter === "all" || indicator.classList.contains(statusFilter);
+
+        if (matchesSearch && matchesStatus) {
+            card.style.display = "block";
+        } else {
+            card.style.display = "none";
+        }
+    });
+}
+
 // ======================
 // Inicialização e Loop
 // ======================
 
 setInterval(loadHosts, 10000);
+setInterval(loadTimeline, 10000);
 setInterval(checkAlerts, 5000);
 
 document.getElementById("refreshBtn").addEventListener("click", loadHosts);

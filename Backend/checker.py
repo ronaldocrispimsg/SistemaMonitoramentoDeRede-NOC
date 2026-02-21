@@ -4,6 +4,7 @@ import socket
 import json
 import re
 import requests
+import httpx
 import dns.resolver
 from datetime import datetime, timedelta
 from Backend.models import DNSCache
@@ -87,12 +88,24 @@ def resolve_dns_cached(address: str, db):
     return ips, ttl, ttl
 
 
-def ping_host(ip: str, count: int = 1, timeout: int = 5, max_ms=5000):
+import platform
+import subprocess
+import re
 
-    if ":" in ip:
-        cmd = ["ping", "-6", "-c", str(count), "-W", str(timeout), ip]
+def ping_host(ip: str, count: int = 3, timeout: int = 5, max_ms=5000):
+    is_windows = platform.system().lower() == "windows"
+    
+    # Montagem do comando baseada no SO e tipo de IP
+    if is_windows:
+        # Windows: -n (count), -w (timeout em ms)
+        # O Windows resolve IPv6 automaticamente, mas podemos forçar se necessário
+        cmd = ["ping", "-n", str(count), "-w", str(timeout * 1000), ip]
     else:
-        cmd = ["ping", "-c", str(count), "-W", str(timeout), ip]
+        # Linux/Unix: -c (count), -W (timeout em segundos)
+        if ":" in ip:
+            cmd = ["ping", "-6", "-c", str(count), "-W", str(timeout), ip]
+        else:
+            cmd = ["ping", "-c", str(count), "-W", str(timeout), ip]
 
     try:
         result = subprocess.run(
@@ -106,11 +119,11 @@ def ping_host(ip: str, count: int = 1, timeout: int = 5, max_ms=5000):
         if result.returncode != 0:
             return {
                 "success": False,
-                "error": result.stderr[:120],
+                "error": result.stderr[:120] if result.stderr else "Host inalcançável",
                 "latency": None
             }
 
-        # extrair RTT real
+        # Extrair RTT real (o regex funciona para ambos: "time=25ms" ou "time<1ms")
         match = re.search(r"time[=<]([\d\.]+)\s*ms", result.stdout)
 
         if not match:

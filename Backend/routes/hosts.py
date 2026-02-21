@@ -76,7 +76,14 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
 
 @router.get("/hosts/list")
 def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
-    return db.query(Host).filter(Host.active == True).all()
+    hosts = db.query(Host).filter(Host.active == True).all()
+    
+    # Métricas em tempo real no objeto antes de enviar
+    for h in hosts:
+        h.mttr = get_mttr(db, h.name)
+        h.availability_10m = availability_last_10_min(db, h.name)
+        
+    return hosts
 
 
 @router.post("/host/check/{host_name}")
@@ -473,8 +480,25 @@ def change_password(data: dict, db: Session = Depends(get_db)):
 
     return {"message": "Senha alterada com sucesso"}
 
-"""
-@router.get("/hosts")
-def list_hosts(user: str = Depends(get_current_user)):
-    return {"message": f"Acesso permitido para {user}"}
-"""
+@router.get("/incidents/latest")
+def get_latest_incidents(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
+    # Busca os 15 incidentes mais recentes (abertos ou fechados)
+    incidents = (
+        db.query(Incident)
+        .order_by(Incident.started_time.desc())
+        .limit(15)
+        .all()
+    )
+    
+    return [
+        {
+            "id": i.id,
+            "host_name": i.host_name,
+            "status": i.status,
+            "reason": i.reason,
+            "started_time": i.started_time.isoformat(),
+            "ended_time": i.ended_time.isoformat() if i.ended_time else None,
+            "duration": i.duration_seconds
+        }
+        for i in incidents
+    ]

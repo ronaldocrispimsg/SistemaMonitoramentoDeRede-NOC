@@ -186,6 +186,29 @@ button {
     border-radius: 3px;
 }
 
+.timeline-container {
+    margin-top: 30px;
+    padding: 20px;
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.timeline-item {
+    padding: 10px;
+    border-left: 3px solid #cbd5e1;
+    margin-bottom: 10px;
+    background: white;
+    border-radius: 0 4px 4px 0;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.02);
+}
+
+.timeline-item.text-danger { border-left-color: #ef4444; }
+.timeline-item.text-success { border-left-color: #22c55e; }
+
+.text-danger { color: #b91c1c; }
+.text-success { color: #15803d; }
+
 .bg-success { background-color: #28a745; } /* Verde */
 .bg-danger { background-color: #dc3545; }  /* Vermelho */
 .bg-warning { background-color: #ffc107; } /* Amarelo */

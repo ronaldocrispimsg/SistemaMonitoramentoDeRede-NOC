@@ -32,6 +32,15 @@
 </section>
 
 <section>
+      <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="Filtrar por nome ou IP..." onkeyup="filterHosts()">
+        <select id="statusFilter" onchange="filterHosts()">
+            <option value="all">Todos os Status</option>
+            <option value="bg-success">Online (UP)</option>
+            <option value="bg-danger">Offline (DOWN)</option>
+            <option value="bg-warning">Degradado</option>
+        </select>
+    </div>
     <h2>Hosts</h2>
     <button id="refreshBtn">Atualizar Lista</button>
     <div id="hosts"></div>
@@ -67,6 +76,11 @@
       <button onclick="submitChangePassword()">Alterar e Entrar</button>
     </div>
   </div>
+</div>
+<div class="timeline-container">
+    <h3>Histórico de Incidentes Recentes</h3>
+    <div id="incidentTimeline" class="timeline">
+        </div>
 </div>
 </body>
 </html>
