@@ -2,7 +2,7 @@ from urllib.parse import urlparse
 import socket
 import ipaddress
 from datetime import datetime
-from Backend.models import Incident
+from Backend.models import CheckResult, Incident
 
 def normalize_http_url(url: str, port: int | None) -> str:
     if not url:
@@ -70,3 +70,17 @@ def close_incident(db, host_name):
     incident.duration_seconds = int(duration.total_seconds())
 
     db.commit()
+
+def consecutive_failures(db, host_name, limit=3):
+    recent = (
+        db.query(CheckResult)
+        .filter(CheckResult.host_name == host_name)
+        .order_by(CheckResult.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+
+    if len(recent) < limit:
+        return False
+
+    return all(not c.success for c in recent)

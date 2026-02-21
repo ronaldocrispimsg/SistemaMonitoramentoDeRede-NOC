@@ -2,10 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from Backend.database import SessionLocal
-from Backend.models import CheckResult, Host, Alert
+from Backend.metrics import get_mttr, total_downtime, total_incidents, availability_last_10_min
+from Backend.models import CheckResult, Host, Alert, Incident, User
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
 from Backend.schemas import HostCreate, HostUpdate
 from Backend.utils import is_ip, normalize_http_url, reverse_dns
+from fastapi.security import OAuth2PasswordRequestForm
+from Backend.dependencies import get_current_user
+from Backend.security import verify_password, create_access_token, hash_password
 
 router = APIRouter()
 
@@ -18,7 +22,7 @@ def get_db():
 
 
 @router.post("/host/create")
-def create_host(data: HostCreate, db: Session = Depends(get_db)):
+def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     existing_host = db.query(Host).filter(Host.name == data.name).first()
     resolved = None
 
@@ -71,7 +75,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/hosts/list")
-def list_hosts(db: Session = Depends(get_db)):
+def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     return db.query(Host).filter(Host.active == True).all()
 
 
@@ -165,7 +169,7 @@ def host_history(host_name: str, db: Session = Depends(get_db)):
     }
 
 @router.delete("/host/delete/{host_name}")
-def delete_host(host_name: str, db: Session = Depends(get_db)):
+def delete_host(host_name: str, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     host = db.query(Host).filter(Host.name == host_name).first()
 
     if not host:
@@ -178,7 +182,7 @@ def delete_host(host_name: str, db: Session = Depends(get_db)):
     return {"detail": "Host desativado com sucesso"}
 
 @router.put("/host/update/{host_name}")
-def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db)):
+def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     host = db.query(Host).filter(Host.name == host_name).first()
     resolved = None
     
@@ -353,4 +357,124 @@ def sla_chart(name: str, db: Session = Depends(get_db)):
         "http": http_out
     }
     
+@router.get("/hosts/metrics/{host_name}")
+def host_metrics(host_name: str, db: Session = Depends(get_db)):
+    return {
+        "mttr_seconds": get_mttr(db, host_name),
+        "total_incidents": total_incidents(db, host_name),
+        "total_downtime_seconds": total_downtime(db, host_name),
+        "availability_10m_percent": availability_last_10_min(db, host_name),
+    }
 
+from datetime import datetime, timedelta
+
+@router.get("/hosts/metrics/{host_name}/history")
+def availability_history(host_name: str, db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+    points = []
+
+    for i in range(60):
+        end = now - timedelta(minutes=i)
+        start = end - timedelta(minutes=1)
+
+        incidents = (
+            db.query(Incident)
+            .filter(
+                Incident.host_name == host_name,
+                Incident.started_time <= end
+            )
+            .all()
+        )
+
+        downtime = 0
+
+        for incident in incidents:
+            s = incident.started_time
+            e = incident.ended_time or end
+
+            overlap_start = max(s, start)
+            overlap_end = min(e, end)
+
+            if overlap_end > overlap_start:
+                downtime += (overlap_end - overlap_start).total_seconds()
+
+        availability = ((60 - downtime) / 60) * 100
+        points.append({
+            "timestamp": start.isoformat(),
+            "availability": round(max(0, availability), 2)
+        })
+
+    return list(reversed(points))
+
+@router.get("/hosts/metrics/{host_name}/downtime")
+def downtime_history(host_name: str, db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+    since = now - timedelta(hours=1)
+
+    incidents = (
+        db.query(Incident)
+        .filter(
+            Incident.host_name == host_name,
+            Incident.started_time >= since
+        )
+        .all()
+    )
+
+    return [
+        {
+            "start": i.started_time.isoformat(),
+            "end": (i.ended_time or now).isoformat(),
+            "duration_seconds": i.duration_seconds
+        }
+        for i in incidents
+    ]
+
+@router.get("/hosts/metrics/{host_name}/error-budget")
+def error_budget(host_name: str, db: Session = Depends(get_db)):
+    sla = 99.9
+    total_period = 30 * 24 * 60 * 60  # 30 dias
+
+    downtime = total_downtime(db, host_name)
+
+    allowed_downtime = total_period * (1 - sla / 100)
+    remaining = allowed_downtime - downtime
+
+    return {
+        "sla_target": sla,
+        "allowed_downtime_seconds": allowed_downtime,
+        "used_downtime_seconds": downtime,
+        "remaining_seconds": max(0, remaining)
+    }
+
+@router.post("/login")
+def login(data: dict, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data["username"]).first()
+
+    if not user or not verify_password(data["password"], user.password_hash):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    # Aqui geramos o token JWT
+    token = create_access_token({"sub": user.username})
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "must_change_password": user.must_change_password
+    }
+
+@router.post("/change-password")
+def change_password(data: dict, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data["username"]).first()
+
+    user.password_hash = hash_password(data["new_password"])
+    user.must_change_password = False
+
+    db.commit()
+
+    return {"message": "Senha alterada com sucesso"}
+
+"""
+@router.get("/hosts")
+def list_hosts(user: str = Depends(get_current_user)):
+    return {"message": f"Acesso permitido para {user}"}
+"""

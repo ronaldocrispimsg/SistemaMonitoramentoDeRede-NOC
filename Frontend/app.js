@@ -1,5 +1,88 @@
 const API = "http://127.0.0.1:8000";
 const charts = {};
+
+// ======================
+// Helper: Requisições Autenticadas
+// ======================
+async function fetchWithAuth(url, options = {}) {
+    const token = localStorage.getItem("token");
+    const headers = {
+        "Content-Type": "application/json",
+        ...options.headers,
+        "Authorization": `Bearer ${token}`
+    };
+    const response = await fetch(url, { ...options, headers });
+    
+    if (response.status === 401) {
+        console.warn("Token expirado ou inválido.");
+        // Opcional: localStorage.removeItem("token");
+    }
+    return response;
+}
+
+// ======================
+// Login
+// ======================
+document.getElementById("loginForm").onsubmit = async function(e) {
+    e.preventDefault();
+    const userVal = document.getElementById("username").value;
+    const passVal = document.getElementById("password").value;
+
+    try {
+        const response = await fetch(`${API}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: userVal, password: passVal })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.access_token) {
+            localStorage.setItem("token", data.access_token);
+            localStorage.setItem("username", userVal); // Guardamos para usar na troca
+
+            // VERIFICA SE PRECISA TROCAR SENHA
+            if (data.must_change_password) {
+                document.getElementById("pwdModal").classList.remove("hidden");
+            } else {
+                alert("Login realizado com sucesso!");
+                loadHosts();
+            }
+        } else {
+            alert("Erro: " + (data.detail || "Credenciais inválidas"));
+        }
+    } catch (err) {
+        alert("Não foi possível conectar ao servidor.");
+    }
+};
+
+// FUNÇÃO PARA ENVIAR A NOVA SENHA
+async function submitChangePassword() {
+    const newPwd = document.getElementById("new-pwd").value;
+    const confirmPwd = document.getElementById("confirm-pwd").value;
+    const username = localStorage.getItem("username");
+
+    if (newPwd !== confirmPwd) return alert("As senhas não coincidem!");
+    if (newPwd.length < 4) return alert("Senha muito curta!");
+
+    const res = await fetch(`${API}/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            username: username,
+            new_password: newPwd
+        })
+    });
+
+    if (res.ok) {
+        alert("Senha alterada! Agora você já pode usar o sistema.");
+        document.getElementById("pwdModal").classList.add("hidden");
+        loadHosts();
+    } else {
+        alert("Erro ao alterar senha.");
+    }
+}
+
 // ======================
 // Cadastrar Host (POST)
 // ======================
@@ -20,7 +103,7 @@ document.getElementById("hostForm").addEventListener("submit", async (e) => {
     };
 
     try {
-        const response = await fetch(`${API}/host/create`, {
+        const response = await fetchWithAuth(`${API}/host/create`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data)
@@ -50,9 +133,14 @@ async function loadHosts() {
     const div = document.getElementById("hosts");
     
     try {
-        const res = await fetch(`${API}/hosts/list`);
+        const res = await fetchWithAuth(`${API}/hosts/list`);
+        if (res.status === 401) {
+            div.innerHTML = "<p style='color:orange'>⚠ Faça login para ver os hosts.</p>";
+            return;
+        }
         const hosts = await res.json();
         div.innerHTML = "";
+
         hosts.forEach(h => {
             let card = document.getElementById(`card-${h.name}`);
 
@@ -109,6 +197,12 @@ async function loadHosts() {
                         <button class="delete-btn" onclick="softDeleteHost('${h.name}')">
                             Deletar
                         </button>
+                        <button onclick="toggleAvailabilityChart('${h.name}')">
+                            Gráfico de disponibilidade
+                        </button>
+                        <button onclick="toggleErrorBudgetChart('${h.name}')">
+                            Gráfico de error budget
+                        </button>
                     </div>
                 </div>
                 
@@ -120,6 +214,12 @@ async function loadHosts() {
                 </div>
                 <div id="sla-chart-box-${h.name}" class="hidden">
                     <canvas id="sla-chart-${h.name}" height="120"></canvas>
+                </div>
+                <div id="availability-chart-box-${h.name}" class="hidden">
+                    <canvas id="availability-chart-${h.name}" height="120"></canvas>
+                </div>
+                <div id="error-budget-chart-box-${h.name}" class="hidden">
+                    <canvas id="error-budget-chart-${h.name}" height="120"></canvas>
                 </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
                 <div id="heatmap-${h.name}" class="hidden heatmap-box"></div>
@@ -151,7 +251,7 @@ async function loadHosts() {
 async function loadLastResult(name) {
     const box = document.getElementById("result-" + name);
 
-    const res = await fetch(`${API}/host/history/${name}`);
+    const res = await fetchWithAuth(`${API}/host/history/${name}`);
     const data = await res.json();
 
     const lastPing = data.checks.find(c => c.type === "ping");
@@ -185,7 +285,7 @@ async function loadHistory(name) {
     box.innerHTML = "Carregando histórico...";
 
     try {
-        const res = await fetch(`${API}/host/history/${name}`);
+        const res = await fetchWithAuth(`${API}/host/history/${name}`);
         const data = await res.json();
 
         if (!data.checks.length) {
@@ -288,7 +388,7 @@ async function submitModalEdit() {
     const newPort = document.getElementById("modal-port").value;
     const newHttp = document.getElementById("modal-http-url").value;
 
-    const res = await fetch(`${API}/host/update/${currentEditHost}`, {
+    const res = await fetchWithAuth(`${API}/host/update/${currentEditHost}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -309,7 +409,7 @@ async function submitModalEdit() {
 async function loadLatencyChart(name) {
     if (charts[name]) charts[name].destroy();
 
-    const res = await fetch(`${API}/host/history/${name}`);
+    const res = await fetchWithAuth(`${API}/host/history/${name}`);
     const data = await res.json();
 
     const ping = data.checks.filter(c => c.type === "ping");
@@ -356,7 +456,7 @@ async function loadLatencyChart(name) {
 
 async function loadSLAChart(name) {
 
-    const res = await fetch(`${API}/host/sla_chart/${name}`);
+    const res = await fetchWithAuth(`${API}/host/sla_chart/${name}`);
     const data = await res.json();
 
     const ping = data.ping || [];
@@ -442,7 +542,7 @@ function showAlertCard(alert) {
 let lastAlertTime = null;
 
 async function checkAlerts() {
-    const res = await fetch(`${API}/alerts/list`);
+    const res = await fetchWithAuth(`${API}/alerts/list`);
     const alerts = await res.json();
 
     alerts.forEach(a => {
@@ -458,7 +558,7 @@ async function softDeleteHost(name) {
     if (!confirm("Remover host?")) return;
 
     try {
-        const res = await fetch(`${API}/host/delete/${name}`, {
+        const res = await fetchWithAuth(`${API}/host/delete/${name}`, {
             method: "DELETE"
         });
 
@@ -477,7 +577,7 @@ async function softDeleteHost(name) {
 
 async function loadHeatmap(name) {
 
-    const res = await fetch(`${API}/host/heatmap/${name}`);
+    const res = await fetchWithAuth(`${API}/host/heatmap/${name}`);
     const data = await res.json();
 
     const box = document.getElementById("heatmap-" + name);
@@ -502,6 +602,104 @@ async function loadHeatmap(name) {
     });
 }
 
+async function toggleAvailabilityChart(name) {
+    const box = document.getElementById(`availability-chart-box-${name}`);
+    if (!box) return;
+
+    if (box.classList.contains("hidden")) {
+        box.classList.remove("hidden");
+        await loadAvailability(name);
+    } else {
+        box.classList.add("hidden");
+    }
+}
+
+async function toggleErrorBudgetChart(name) {
+    const box = document.getElementById(`error-budget-chart-box-${name}`);
+    if (!box) return;
+
+    if (box.classList.contains("hidden")) {
+        box.classList.remove("hidden");
+        await loadErrorBudget(name);
+    } else {
+        box.classList.add("hidden");
+    }
+}
+ 
+async function loadAvailability(name) {
+    const chartId = `availability-chart-${name}`;
+    const ctx = document.getElementById(chartId);
+    if (!ctx) return;
+
+    try {
+        const response = await fetchWithAuth(`${API}/hosts/metrics/${name}/history`);
+        const data = await response.json();
+
+        const labels = data.map(p => new Date(p.timestamp).toLocaleTimeString());
+        const values = data.map(p => p.availability);
+
+        // Destruir se já existir para evitar bugs visuais ao passar o mouse
+        if (charts[`avail-${name}`]) charts[`avail-${name}`].destroy();
+
+        charts[`avail-${name}`] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Disponibilidade (%)',
+                    data: values,
+                    borderColor: '#2ecc71',
+                    backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { min: 0, max: 100 }
+                }
+            }
+        });
+    } catch (err) {
+        console.error("Erro ao carregar disponibilidade:", err);
+    }
+}
+
+async function loadErrorBudget(name) {
+    const chartId = `error-budget-chart-${name}`;
+    const ctx = document.getElementById(chartId);
+    if (!ctx) return;
+
+    try {
+        const response = await fetchWithAuth(`${API}/hosts/metrics/${name}/error-budget`);
+        const data = await response.json();
+
+        if (charts[`eb-${name}`]) charts[`eb-${name}`].destroy();
+
+        charts[`eb-${name}`] = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Downtime Usado (s)', 'Restante (s)'],
+                datasets: [{
+                    data: [
+                        data.used_downtime_seconds,
+                        Math.max(0, data.remaining_seconds)
+                    ],
+                    backgroundColor: ['#e74c3c', '#2ecc71']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+    } catch (err) {
+        console.error("Erro ao carregar Error Budget:", err);
+    }
+}
 
 // ======================
 // Inicialização e Loop
@@ -519,3 +717,8 @@ window.onclick = function(event) {
             closeModal();
         }
     };
+
+document.getElementById("logoutBtn").onclick = () => {
+    localStorage.removeItem("token");
+    window.location.reload(); // Recarrega para voltar ao estado de login
+};

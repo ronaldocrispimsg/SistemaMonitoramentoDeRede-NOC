@@ -6,7 +6,8 @@ from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached, http_check
 from Backend.metrics import calc_jitter_http, calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_http, calc_sla_rolling_ping, calc_sla_rolling_tcp, refine_severity, compute_health, calc_latency_trend_ping, classify_trend, calc_latency_trend_http, classify_trend_http
-from Backend.utils import close_incident, open_incident
+from Backend.utils import close_incident, consecutive_failures, open_incident
+
 scheduler = BackgroundScheduler()
 
 ALERT_FAIL_THRESHOLD = 2
@@ -74,7 +75,6 @@ def check_all_hosts():
                     host.fail_streak = (host.fail_streak or 0) + 1
                     host.success_streak = 0
 
-                    trim_history(db, host.id, "dns")
                     db.commit()
                     continue
 
@@ -87,7 +87,6 @@ def check_all_hosts():
                     latency=None,
                     error=None
                 ))
-                trim_history(db, host.id, "dns")
 
                 # =====================
                 # Escolha IP rotativo
@@ -144,7 +143,7 @@ def check_all_hosts():
                 host.health_score = score
                 host.severity = severity
 
-                if severity == "CRITICAL":
+                if consecutive_failures(db,host.name, limit=3):
                     open_incident(db, host.name, "Host indisponível")
 
                 elif severity == "HEALTHY":
@@ -252,14 +251,6 @@ def check_all_hosts():
                         error=http_result.get("error")
                     ))
 
-                trim_history(db, host.id, "ping")
-
-                if tcp_result:
-                    trim_history(db, host.id, "tcp")
-
-                if http_result:
-                    trim_history(db, host.id, "http")
-
                 host.sla_rolling_ping = calc_sla_rolling_ping(db, host.id, 50)
                 host.jitter_ms_ping = calc_jitter_ping(db, host.id, 10)
                 
@@ -285,8 +276,6 @@ def check_all_hosts():
                     host.jitter_ms_tcp,
                     host.jitter_ms_http
                 )
-
-    
                 db.commit()
 
             except Exception as e:
@@ -300,7 +289,7 @@ def check_all_hosts():
         db.close()
 
 
-def trim_history(db, host_id, check_type, limit=100):
+def trim_history(db, host_id, check_type, limit=500):
     old = (
         db.query(CheckResult)
         .filter(CheckResult.host_id == host_id,
@@ -313,7 +302,23 @@ def trim_history(db, host_id, check_type, limit=100):
     for row in old:
         db.delete(row)
 
+def cleanup_old_data():
+    db: Session = SessionLocal()
+    try:
+        # Pega todos os IDs de hosts ativos
+        hosts = db.query(Host).all()
+        for host in hosts:
+            for c_type in ["ping", "tcp", "http", "dns"]:
+                trim_history(db, host.id, c_type, limit=100)
+        db.commit()
+        print(f"[{datetime.now()}] Limpeza de histórico concluída.")
+    except Exception as e:
+        print(f"[CLEANUP ERROR] {e}")
+    finally:
+        db.close()
+
 def start_scheduler():
+    # Tarefa Principal
     scheduler.add_job(
         check_all_hosts,
         "interval",
@@ -321,6 +326,16 @@ def start_scheduler():
         id="check_hosts_job",
         replace_existing=True
     )
+
+    # Tarefa de limpeza (roda a cada 1 hora)
+    scheduler.add_job(
+        cleanup_old_data,
+        "interval",
+        hours=1,
+        id="cleanup_job",
+        replace_existing=True
+    )
+
     scheduler.start()
 
 

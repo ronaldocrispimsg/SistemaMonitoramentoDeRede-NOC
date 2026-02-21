@@ -91,8 +91,8 @@ class Incident(Base):
     host_name = Column(String, index=True)
     status = Column(String, default="OPEN")  # OPEN / CLOSED
     reason = Column(String)
-    started_at = Column(DateTime, default=datetime.utcnow)
-    ended_at = Column(DateTime, nullable=True)
+    started_time = Column(DateTime, default=datetime.utcnow)
+    ended_time = Column(DateTime, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
 
 class DNSCache(Base):
@@ -106,3 +106,11 @@ class DNSCache(Base):
 
     resolved_time = Column(DateTime)
     expires_time = Column(DateTime)
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+    must_change_password = Column(Boolean, default=True)

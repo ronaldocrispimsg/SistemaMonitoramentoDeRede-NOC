@@ -13,6 +13,13 @@
 <h1>NOC Lite</h1>
 
 <section>
+    <h2>Login</h2>
+    <form id="loginForm">
+          <input id="username" placeholder="Usuário">
+          <input id="password" type="password" placeholder="Senha">
+          <button type="submit">Login</button>
+    </form>
+    <button id="logoutBtn">Sair</button>
     <h2>Cadastrar Host</h2>
 
     <form id="hostForm">
@@ -50,5 +57,16 @@
   </div>
 </div>
 
+<div id="pwdModal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Troca de Senha Obrigatória</h3>
+    <p>Este é seu primeiro acesso. Por favor, escolha uma nova senha.</p>
+    <input id="new-pwd" type="password" placeholder="Nova Senha">
+    <input id="confirm-pwd" type="password" placeholder="Confirme a Senha">
+    <div class="modal-actions">
+      <button onclick="submitChangePassword()">Alterar e Entrar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

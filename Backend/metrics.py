@@ -1,4 +1,5 @@
-from Backend.models import CheckResult
+from datetime import datetime, timedelta
+from Backend.models import CheckResult, Incident
 
 def compute_health(ping_result, tcp_result, http_result):
 
@@ -312,3 +313,71 @@ def classify_trend_http(slope):
         return "DEGRADING"
     else:
         return "CRITICAL"
+
+# Metricas MTTR Medio
+def get_mttr(db, host_name):
+    incidents = (
+        db.query(Incident)
+        .filter(
+            Incident.host_name == host_name,
+            Incident.status == "CLOSED",
+            Incident.duration_seconds != None
+        )
+        .all()
+    )
+
+    if not incidents:
+        return 0
+
+    total = sum(i.duration_seconds for i in incidents)
+    return total / len(incidents)
+
+def total_incidents(db, host_name):
+    return (
+        db.query(Incident)
+        .filter(Incident.host_name == host_name)
+        .count()
+    )
+
+def total_downtime(db, host_name):
+    incidents = (
+        db.query(Incident)
+        .filter(
+            Incident.host_name == host_name,
+            Incident.status == "CLOSED",
+            Incident.duration_seconds != None
+        )
+        .all()
+    )
+
+    return sum(i.duration_seconds for i in incidents)
+
+def availability_last_10_min(db, host_name):
+    now = datetime.utcnow()
+    since = now - timedelta(minutes=10)
+
+    incidents = (
+        db.query(Incident)
+        .filter(
+            Incident.host_name == host_name,
+            Incident.started_time <= now
+        )
+        .all()
+    )
+
+    downtime = 0
+
+    for incident in incidents:
+        start = incident.started_time
+        end = incident.ended_time or now
+
+        overlap_start = max(start, since)
+        overlap_end = min(end, now)
+
+        if overlap_end > overlap_start:
+            downtime += (overlap_end - overlap_start).total_seconds()
+
+    total_period = 600
+    availability = ((total_period - downtime) / total_period) * 100
+
+    return round(max(0, availability), 4)

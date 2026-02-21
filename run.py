@@ -2,6 +2,8 @@ import subprocess
 import sys
 import time
 import os
+from Backend.models import User
+from Backend.security import hash_password
 
 def run_project():
     # Caminho absoluto da raiz do projeto (onde o run.py está)
@@ -37,3 +39,15 @@ def run_project():
 
 if __name__ == "__main__":
     run_project()
+
+def create_default_admin(db):
+    admin = db.query(User).filter(User.username == "admin").first()
+
+    if not admin:
+        new_admin = User(
+            username="admin",
+            password_hash=hash_password("admin"),
+            must_change_password=True
+        )
+        db.add(new_admin)
+        db.commit()
