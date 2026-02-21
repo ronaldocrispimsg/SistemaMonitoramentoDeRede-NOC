@@ -5,7 +5,7 @@ from Backend.database import SessionLocal
 from Backend.models import CheckResult, Host, Alert
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
 from Backend.schemas import HostCreate, HostUpdate
-from Backend.utils import normalize_http_url
+from Backend.utils import is_ip, normalize_http_url, reverse_dns
 
 router = APIRouter()
 
@@ -19,13 +19,16 @@ def get_db():
 
 @router.post("/host/create")
 def create_host(data: HostCreate, db: Session = Depends(get_db)):
-    
     existing_host = db.query(Host).filter(Host.name == data.name).first()
-    
-    ips = resolve_dns_cached(data.address, db)  # Verifica se o endereço é válido       
-    if not ips:
-        raise HTTPException(status_code=400, detail="Endereço inválido")
-    
+
+    if is_ip(data.address):
+        resolved = reverse_dns(data.address)
+    else:
+        ips = resolve_dns_cached(data.address, db)  # Verifica se o endereço é válido       
+        
+        if not ips:
+            raise HTTPException(status_code=400, detail="Endereço inválido")
+                   
     if existing_host:
         if not existing_host.active:
             existing_host.active = True
@@ -35,6 +38,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
             existing_host.address = data.address
             existing_host.port = data.port
             existing_host.http_url = data.http_url
+            existing_host.hostname_resolved = resolved
 
             db.commit()
             db.refresh(existing_host)
@@ -47,6 +51,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db)):
             name=data.name,
             address=data.address,
             port=data.port,
+            hostname_resolved=resolved,
             http_url=data.http_url
         )
         db.add(host)
@@ -170,14 +175,19 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db))
 
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
-    ips = resolve_dns_cached(data.address, db)
+    
+    if is_ip(data.address):
+        resolved = reverse_dns(data.address)
+    else:
+        ips = resolve_dns_cached(data.address, db)
 
-    if not ips:
-        raise HTTPException(status_code=400, detail="Endereço inválido. ")
+        if not ips:
+            raise HTTPException(status_code=400, detail="Endereço inválido. ")
     
     host.address = data.address
     host.port = data.port
-    
+    host.hostname_resolved = resolved
+
     if data.http_url is not None:
 
         normalized_url = normalize_http_url(

@@ -17,6 +17,7 @@ class Host(Base):
     active_time = Column(DateTime, nullable=True)
 
     last_resolved_ip = Column(String, nullable=True)
+    hostname_resolved = Column(String, nullable=True)
 
     status = Column(String)
     status_ping = Column(String)
