@@ -22,7 +22,6 @@ async function fetchWithAuth(url, options = {}) {
         if (response.status === 401) {
             alert("Sessão expirada. Por favor, faça login novamente.");
             localStorage.clear();
-            window.location.reload();
             return null;
         }
         
