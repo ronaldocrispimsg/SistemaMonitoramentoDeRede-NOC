@@ -314,24 +314,6 @@ def classify_trend_http(slope):
     else:
         return "CRITICAL"
 
-# Metricas MTTR Medio
-def get_mttr(db, host_name):
-    incidents = (
-        db.query(Incident)
-        .filter(
-            Incident.host_name == host_name,
-            Incident.status == "CLOSED",
-            Incident.duration_seconds != None
-        )
-        .all()
-    )
-
-    if not incidents:
-        return 0
-
-    total = sum(i.duration_seconds for i in incidents)
-    return total / len(incidents)
-
 def total_incidents(db, host_name):
     return (
         db.query(Incident)
@@ -357,13 +339,14 @@ def availability_last_10_min(db, host_name):
     since = now - timedelta(minutes=10)
 
     incidents = (
-        db.query(Incident)
-        .filter(
-            Incident.host_name == host_name,
-            Incident.started_time <= now
-        )
-        .all()
+    db.query(Incident)
+    .filter(
+        Incident.host_name == host_name,
+        Incident.started_time <= now,
+        (Incident.ended_time == None) | (Incident.ended_time >= since)
     )
+    .all()
+)
 
     downtime = 0
 

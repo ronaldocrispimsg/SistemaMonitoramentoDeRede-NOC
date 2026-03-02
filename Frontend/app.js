@@ -211,17 +211,16 @@ async function loadHosts() {
                             Deletar
                         </button>
                         <button onclick="toggleAvailabilityChart('${h.name}')">
-                            Gráfico de disponibilidade
-                        </button>
-                        <button onclick="toggleErrorBudgetChart('${h.name}')">
-                            Gráfico de error budget
+                            Gráfico de disponi...
                         </button>
                     </div>
                 </div>
-                
                 <div id="result-${h.name}" style="margin-top: 10px; font-size: 0.9em;">
                     <i>Atualizando...</i>
                 </div>
+                <small style="color: #666;">
+                    <b>Disponibilidade nos ultimos 10 minutos:</b> ${h.availability_10m.toFixed(2)}%
+                </small>
                 <div id="chart-container-${h.name}" class="hidden" style="margin-top: 10px;">
                     <canvas id="chart-${h.name}" height="120"></canvas>
                 </div>
@@ -231,15 +230,9 @@ async function loadHosts() {
                 <div id="availability-chart-box-${h.name}" class="hidden">
                     <canvas id="availability-chart-${h.name}" height="120"></canvas>
                 </div>
-                <div id="error-budget-chart-box-${h.name}" class="hidden">
-                    <canvas id="error-budget-chart-${h.name}" height="120"></canvas>
-                </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
                 <div id="heatmap-${h.name}" class="hidden heatmap-box"></div>
-                <small style="color: #666;">
-                    <b>MTTR:</b> ${h.mttr > 0 ? (h.mttr / 60).toFixed(1) + ' min' : 'N/A'} | 
-                    <b>Disp ultimos(10m):</b> ${h.availability_10m.toFixed(2)}%
-                </small>
+                
             `;
 
             div.appendChild(card);
@@ -252,11 +245,20 @@ async function loadHosts() {
             
             // ATUALIZA OS DADOS DE PING/TCP
             loadLastResult(h.name);
+            availability_10m = h.availability_10m.toFixed(2);
 
             // SE O GRÁFICO ESTIVER ABERTO, ATUALIZA ELE TAMBÉM
             const container = document.getElementById("chart-container-" + h.name);
             if (container && !container.classList.contains("hidden")) {
                 loadLatencyChart(h.name);
+            }
+            const slaBox = document.getElementById("sla-chart-box-" + h.name);
+            if (slaBox && !slaBox.classList.contains("hidden")) {
+                loadSLAChart(h.name);
+            }
+            const availBox = document.getElementById("availability-chart-box-" + h.name);
+            if (availBox && !availBox.classList.contains("hidden")) {
+                loadAvailability(h.name);
             }
         });
     } catch (err) {
@@ -645,18 +647,6 @@ async function toggleAvailabilityChart(name) {
     }
 }
 
-async function toggleErrorBudgetChart(name) {
-    const box = document.getElementById(`error-budget-chart-box-${name}`);
-    if (!box) return;
-
-    if (box.classList.contains("hidden")) {
-        box.classList.remove("hidden");
-        await loadErrorBudget(name);
-    } else {
-        box.classList.add("hidden");
-    }
-}
- 
 async function loadAvailability(name) {
     const chartId = `availability-chart-${name}`;
     const ctx = document.getElementById(chartId);
@@ -697,44 +687,6 @@ async function loadAvailability(name) {
         });
     } catch (err) {
         console.error("Erro ao carregar disponibilidade:", err);
-    }
-}
-
-async function loadErrorBudget(name) {
-    const chartId = `error-budget-chart-${name}`;
-    const ctx = document.getElementById(chartId);
-    if (!ctx) return;
-
-    try {
-        const response = await fetchWithAuth(`${API}/hosts/metrics/${name}/error-budget`);
-        
-        if (!response || !response.ok) return;
-
-        const data = await response.json();
-
-        if (charts[`eb-${name}`]) charts[`eb-${name}`].destroy();
-
-        charts[`eb-${name}`] = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Downtime Usado (s)', 'Restante (s)'],
-                datasets: [{
-                    data: [
-                        data.used_downtime_seconds,
-                        Math.max(0, data.remaining_seconds)
-                    ],
-                    backgroundColor: ['#e74c3c', '#2ecc71']
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'bottom' }
-                }
-            }
-        });
-    } catch (err) {
-        console.error("Erro ao carregar Error Budget:", err);
     }
 }
 
@@ -794,9 +746,9 @@ function filterHosts() {
 // Inicialização e Loop
 // ======================
 
-setInterval(loadHosts, 10000);
-setInterval(loadTimeline, 10000);
-setInterval(checkAlerts, 5000);
+setInterval(loadHosts, 5000);
+setInterval(loadTimeline, 5000);
+setInterval(checkAlerts, 2500);
 
 document.getElementById("refreshBtn").addEventListener("click", loadHosts);
 window.onload = loadHosts;

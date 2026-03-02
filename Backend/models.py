@@ -89,7 +89,7 @@ class Incident(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     host_name = Column(String, index=True)
-    status = Column(String, default="OPEN")  # OPEN / CLOSED
+    status = Column(String, default="OPEN")
     reason = Column(String)
     started_time = Column(DateTime, default=datetime.utcnow)
     ended_time = Column(DateTime, nullable=True)

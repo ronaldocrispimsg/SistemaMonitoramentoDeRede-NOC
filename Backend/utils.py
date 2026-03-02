@@ -64,17 +64,17 @@ def close_incident(db, host_name):
         return
 
     incident.status = "CLOSED"
-    incident.ended_at = datetime.utcnow()
+    incident.ended_time = datetime.utcnow()
 
-    duration = incident.ended_at - incident.started_at
+    duration = incident.ended_time - incident.started_time
     incident.duration_seconds = int(duration.total_seconds())
 
     db.commit()
 
-def consecutive_failures(db, host_name, limit=3):
+def consecutive_failures(db, host_id, limit=3):
     recent = (
         db.query(CheckResult)
-        .filter(CheckResult.host_name == host_name)
+        .filter(CheckResult.host_id == host_id)
         .order_by(CheckResult.timestamp.desc())
         .limit(limit)
         .all()

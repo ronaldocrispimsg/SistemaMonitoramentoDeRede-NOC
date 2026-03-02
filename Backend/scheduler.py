@@ -143,12 +143,6 @@ def check_all_hosts():
                 host.health_score = score
                 host.severity = severity
 
-                if consecutive_failures(db,host.name, limit=3):
-                    open_incident(db, host.name, "Host indisponível")
-
-                elif severity == "HEALTHY":
-                    close_incident(db, host.name)
-
                 if severity == "CRITICAL":
                     db.add(Alert(
                         host_id=host.id,
@@ -251,6 +245,14 @@ def check_all_hosts():
                         error=http_result.get("error")
                     ))
 
+                db.flush()
+
+                if consecutive_failures(db,host.id, limit=3):
+                    open_incident(db, host.name, "Host indisponível")
+
+                elif severity == "HEALTHY" or severity == "WARNING":
+                    close_incident(db, host.name)
+
                 host.sla_rolling_ping = calc_sla_rolling_ping(db, host.id, 50)
                 host.jitter_ms_ping = calc_jitter_ping(db, host.id, 10)
                 
@@ -322,7 +324,7 @@ def start_scheduler():
     scheduler.add_job(
         check_all_hosts,
         "interval",
-        seconds=10,
+        seconds=5,
         id="check_hosts_job",
         replace_existing=True
     )

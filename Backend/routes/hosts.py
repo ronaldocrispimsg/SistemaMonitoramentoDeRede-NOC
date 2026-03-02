@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from Backend.database import SessionLocal
-from Backend.metrics import get_mttr, total_downtime, total_incidents, availability_last_10_min
+from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
 from Backend.schemas import HostCreate, HostUpdate
@@ -80,7 +80,6 @@ def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_us
     
     # Métricas em tempo real no objeto antes de enviar
     for h in hosts:
-        h.mttr = get_mttr(db, h.name)
         h.availability_10m = availability_last_10_min(db, h.name)
         
     return hosts
@@ -367,13 +366,10 @@ def sla_chart(name: str, db: Session = Depends(get_db)):
 @router.get("/hosts/metrics/{host_name}")
 def host_metrics(host_name: str, db: Session = Depends(get_db)):
     return {
-        "mttr_seconds": get_mttr(db, host_name),
         "total_incidents": total_incidents(db, host_name),
         "total_downtime_seconds": total_downtime(db, host_name),
         "availability_10m_percent": availability_last_10_min(db, host_name),
     }
-
-from datetime import datetime, timedelta
 
 @router.get("/hosts/metrics/{host_name}/history")
 def availability_history(host_name: str, db: Session = Depends(get_db)):
@@ -435,23 +431,6 @@ def downtime_history(host_name: str, db: Session = Depends(get_db)):
         }
         for i in incidents
     ]
-
-@router.get("/hosts/metrics/{host_name}/error-budget")
-def error_budget(host_name: str, db: Session = Depends(get_db)):
-    sla = 99.9
-    total_period = 30 * 24 * 60 * 60  # 30 dias
-
-    downtime = total_downtime(db, host_name)
-
-    allowed_downtime = total_period * (1 - sla / 100)
-    remaining = allowed_downtime - downtime
-
-    return {
-        "sla_target": sla,
-        "allowed_downtime_seconds": allowed_downtime,
-        "used_downtime_seconds": downtime,
-        "remaining_seconds": max(0, remaining)
-    }
 
 @router.post("/login")
 def login(data: dict, db: Session = Depends(get_db)):
