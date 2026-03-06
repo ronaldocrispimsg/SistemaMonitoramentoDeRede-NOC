@@ -2,14 +2,17 @@ import subprocess
 import sys
 import time
 import os
+from Backend.database import SessionLocal, engine, Base
 from Backend.models import User
 from Backend.security import hash_password
 
 def run_project():
-    # Caminho absoluto da raiz do projeto (onde o run.py está)
     base_path = os.path.dirname(os.path.abspath(__file__))
     
-    print("NOC Lite...")
+    Base.metadata.create_all(bind=engine)
+    print(f"Verificando usuários...")
+    create_default_admin()
+    
     backend_cmd = [
         sys.executable, "-m", "uvicorn", 
         "Backend.main:app",
@@ -37,17 +40,21 @@ def run_project():
         pasta_front.terminate()
         print("Desligado.")
 
-if __name__ == "__main__":
-    run_project()
+def create_default_admin():
+    db = SessionLocal()
 
-def create_default_admin(db):
-    admin = db.query(User).filter(User.username == "admin").first()
-
-    if not admin:
-        new_admin = User(
+    if not db.query(User).filter(User.username == "admin").first():
+        novo_admin = User(
             username="admin",
             password_hash=hash_password("admin"),
             must_change_password=True
         )
-        db.add(new_admin)
+        db.add(novo_admin)
         db.commit()
+        print("Usuários: admin criado com sucesso!")
+    else:
+        print("Usuarios: admin já existe.")
+    db.close()
+
+if __name__ == "__main__":
+    run_project()

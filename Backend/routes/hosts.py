@@ -237,132 +237,6 @@ def list_alerts(db: Session = Depends(get_db)):
 
     return result
 
-@router.get("/host/heatmap/{host_name}")
-def heatmap(host_name: str, db: Session = Depends(get_db)):
-
-    host = db.query(Host).filter_by(name=host_name).first()
-    if not host:
-        raise HTTPException(404, "Host não encontrado")
-
-    since = datetime.utcnow() - timedelta(hours=24)
-
-    rows = (
-        db.query(CheckResult)
-        .filter(
-            CheckResult.host_id == host.id,
-            CheckResult.check_type == "ping",
-            CheckResult.timestamp >= since
-        )
-        .order_by(CheckResult.timestamp.desc())
-        .limit(1000)
-
-    )
-
-    buckets = {}
-
-    for r in rows:
-        bucket = r.timestamp.replace(
-            minute=r.timestamp.minute,
-            second=0,
-            microsecond=0
-        )
-
-        buckets.setdefault(bucket, []).append(r.latency)
-
-    result = []
-
-    for t, values in buckets.items():
-        lat = [v for v in values if v is not None]
-        avg = sum(lat)/len(lat) if lat else None
-
-        result.append({
-            "time": t.isoformat(),
-            "latency": avg
-        })
-
-    return sorted(result, key=lambda x: x["time"])
-
-@router.get("/host/sla_chart/{name}")
-def sla_chart(name: str, db: Session = Depends(get_db)):
-
-    host = db.query(Host).filter_by(name=name).first()
-    if not host:
-        return {"ping": [], "tcp": []}
-
-    window = 20
-
-    # -------------------
-    # PING
-    # -------------------
-    ping_rows = (
-        db.query(CheckResult)
-        .filter(CheckResult.host_id == host.id,
-                CheckResult.check_type == "ping")
-        .order_by(CheckResult.timestamp.asc())
-        .all()
-    )
-
-    ping_out = []
-
-    for i in range(window, len(ping_rows)+1):
-        chunk = ping_rows[i-window:i]
-        ok = sum(1 for r in chunk if r.success)
-
-        ping_out.append({
-            "time": chunk[-1].timestamp,
-            "sla": round(ok / window * 100, 2)
-        })
-
-    # -------------------
-    # TCP
-    # -------------------
-    tcp_rows = (
-        db.query(CheckResult)
-        .filter(CheckResult.host_id == host.id,
-                CheckResult.check_type == "tcp")
-        .order_by(CheckResult.timestamp.asc())
-        .all()
-    )
-
-    tcp_out = []
-
-    for i in range(window, len(tcp_rows)+1):
-        chunk = tcp_rows[i-window:i]
-        ok = sum(1 for r in chunk if r.success)
-
-        tcp_out.append({
-            "time": chunk[-1].timestamp,
-            "sla": round(ok / window * 100, 2)
-        })
-
-    # -------------------
-    # HTTP
-    # -------------------
-    http_rows = (
-        db.query(CheckResult)
-        .filter(CheckResult.host_id == host.id,
-                CheckResult.check_type == "http")
-        .order_by(CheckResult.timestamp.asc())
-        .all()
-    )
-
-    http_out = []
-
-    for i in range(window, len(http_rows)+1):
-        chunk = http_rows[i-window:i]
-        ok = sum(1 for r in chunk if r.success)
-
-        http_out.append({
-            "time": chunk[-1].timestamp,
-            "sla": round(ok / window * 100, 2)
-        })
-
-    return {
-        "ping": ping_out,
-        "tcp": tcp_out,
-        "http": http_out
-    }
-    
 @router.get("/hosts/metrics/{host_name}")
 def host_metrics(host_name: str, db: Session = Depends(get_db)):
     return {
@@ -371,8 +245,54 @@ def host_metrics(host_name: str, db: Session = Depends(get_db)):
         "availability_10m_percent": availability_last_10_min(db, host_name),
     }
 
-@router.get("/hosts/metrics/{host_name}/history")
-def availability_history(host_name: str, db: Session = Depends(get_db)):
+@router.get("/hosts/metrics/availability/type/{host_name}")
+def availability_type(host_name: str, db: Session = Depends(get_db)):
+
+    host = db.query(Host).filter_by(name=host_name).first()
+    if not host:
+        return {"ping": [], "tcp": [], "http": []}
+
+    window = 100
+
+    def calc_availability(check_type: str):
+
+        rows = (
+            db.query(CheckResult)
+            .filter(
+                CheckResult.host_id == host.id,
+                CheckResult.check_type == check_type
+            )
+            .order_by(CheckResult.timestamp.desc())
+            .limit(300)
+            .all()
+        )
+
+        rows.reverse()
+
+        points = []
+
+        for i in range(window, len(rows) + 1):
+
+            chunk = rows[i-window:i]
+            ok = sum(1 for r in chunk if r.success)
+
+            availability = (ok / window) * 100
+
+            points.append({
+                "timestamp": chunk[-1].timestamp.isoformat(),
+                "availability": round(availability, 2)
+            })
+
+        return points
+
+    return {
+        "ping": calc_availability("ping"),
+        "tcp": calc_availability("tcp"),
+        "http": calc_availability("http")
+    }
+    
+@router.get("/hosts/metrics/availability/host/{host_name}")
+def availability_host(host_name: str, db: Session = Depends(get_db)):
     now = datetime.utcnow()
     points = []
 
@@ -461,11 +381,10 @@ def change_password(data: dict, db: Session = Depends(get_db)):
 
 @router.get("/incidents/latest")
 def get_latest_incidents(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
-    # Busca os 15 incidentes mais recentes (abertos ou fechados)
     incidents = (
         db.query(Incident)
         .order_by(Incident.started_time.desc())
-        .limit(15)
+        .limit(25)
         .all()
     )
     

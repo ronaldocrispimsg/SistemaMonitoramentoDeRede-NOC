@@ -182,12 +182,12 @@ async function loadHosts() {
                         <small>(${h.address}${h.port ? ':' + h.port : ''})</small>
                         </br><small>Saúde: ${h.health_score}%<span class="severity-indicator ${sevClass}">✚</span></small>
                         </br><small>Taxa de sucesso (ping): ${h.sla_rolling_ping ?? "N/A"}%</small>
-                        </br><small>Variacao na latencia (ping): ${h.jitter_ms_ping ?? "N/A"}ms</small>
                         </br><small>Taxa de sucesso (tcp): ${h.sla_rolling_tcp ?? "N/A"}%</small>
-                        </br><small>Variacao na latencia (tcp): ${h.jitter_ms_tcp ?? "N/A"}ms</small>
                         </br><small>Taxa de sucesso (http): ${h.sla_rolling_http ?? "N/A"}%</small>
+                        </br><small>Variacao na latencia (ping): ${h.jitter_ms_ping ?? "N/A"}ms</small>
+                        </br><small>Variacao na latencia (tcp): ${h.jitter_ms_tcp ?? "N/A"}ms</small>
                         </br><small>Variacao na latencia (http): ${h.jitter_ms_http ?? "N/A"}ms</small>
-                        </br><small>Tendencia (http): ${h.trend_http ?? "N/A"}</small>
+                        </br><small>Tendencia do status (http): ${h.trend_http ?? "N/A"}</small>
                     </div>
                     <div class="button-group" style="display: flex; gap: 10px;">
                         <button class="history-btn"
@@ -198,20 +198,17 @@ async function loadHosts() {
                             onclick="toggleLatencyChart('${h.name}')">
                             Gráfico de latência
                         </button>
-                        <button onclick="toggleSLAChart('${h.name}')">
-                            Gráfico de SLA
+                        <button onclick="toggleAvailabilityChartType('${h.name}')">
+                            Gráfico de disponibilidade por tipo
                         </button>
-                        <button onclick="toggleHeatmap('${h.name}')">
-                            Heatmap
+                        <button onclick="toggleAvailabilityChart('${h.name}')">
+                            Gráfico de disponibilidade geral
                         </button>
                         <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}')">
                             Editar
                         </button>
                         <button class="delete-btn" onclick="softDeleteHost('${h.name}')">
                             Deletar
-                        </button>
-                        <button onclick="toggleAvailabilityChart('${h.name}')">
-                            Gráfico de disponi...
                         </button>
                     </div>
                 </div>
@@ -224,14 +221,13 @@ async function loadHosts() {
                 <div id="chart-container-${h.name}" class="hidden" style="margin-top: 10px;">
                     <canvas id="chart-${h.name}" height="120"></canvas>
                 </div>
-                <div id="sla-chart-box-${h.name}" class="hidden">
-                    <canvas id="sla-chart-${h.name}" height="120"></canvas>
+                <div id="availability-chart-type-box-${h.name}" class="hidden">
+                    <canvas id="availability-chart-type-${h.name}" height="120"></canvas>
                 </div>
                 <div id="availability-chart-box-${h.name}" class="hidden">
                     <canvas id="availability-chart-${h.name}" height="120"></canvas>
                 </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
-                <div id="heatmap-${h.name}" class="hidden heatmap-box"></div>
                 
             `;
 
@@ -359,24 +355,9 @@ async function toggleLatencyChart(name) {
     }
 }
 
-async function toggleSLAChart(name) {
+async function toggleAvailabilityChartType(name) {
 
-    const box = document.getElementById("sla-chart-box-" + name);
-
-    if (!box) return;
-
-    if (!box.classList.contains("hidden")) {
-        box.classList.add("hidden");
-        return;
-    }
-
-    box.classList.remove("hidden");
-    loadSLAChart(name);
-}
-
-
-async function toggleHeatmap(name) {
-    const box = document.getElementById("heatmap-" + name);
+    const box = document.getElementById("availability-chart-type-box-" + name);
 
     if (!box) return;
 
@@ -386,7 +367,7 @@ async function toggleHeatmap(name) {
     }
 
     box.classList.remove("hidden");
-    await loadHeatmap(name);
+    loadAvailabilityChartType(name);
 }
 
 let currentEditHost = null;
@@ -481,10 +462,9 @@ async function loadLatencyChart(name) {
     });
 }
 
-async function loadSLAChart(name) {
+async function loadAvailabilityChartType(name) {
 
-    const res = await fetchWithAuth(`${API}/host/sla_chart/${name}`);
-    
+    const res = await fetchWithAuth(`${API}/hosts/metrics/availability/type/${name}`);
     if (!res || !res.ok) return;
 
     const data = await res.json();
@@ -493,37 +473,40 @@ async function loadSLAChart(name) {
     const tcp  = data.tcp || [];
     const http = data.http || [];
 
-    // labels baseadas no ping (principal)
-    const labels = ping.map(p =>
-        new Date(p.time).toLocaleTimeString()
+    const base = ping.length ? ping : (tcp.length ? tcp : http);
+
+    const labels = base.map(p =>
+        new Date(p.timestamp).toLocaleTimeString()
     );
 
-    const pingValues = ping.map(p => p.sla);
-    const tcpValues  = tcp.map(p => p.sla);
-    const httpValues = http.map(p => p.sla);
+    const pingValues = ping.map(p => p.availability);
+    const tcpValues  = tcp.map(p => p.availability);
+    const httpValues = http.map(p => p.availability);
 
-    const ctx = document.getElementById("sla-chart-" + name);
+    const ctx = document.getElementById("availability-chart-type-" + name);
+    if (!ctx) return;
 
-    // destruir chart antigo se existir
-    if (charts["sla-" + name]) {
-        charts["sla-" + name].destroy();
+    const chartKey = `availability-type-${name}`;
+
+    if (charts[chartKey]) {
+        charts[chartKey].destroy();
     }
 
-    charts["sla-" + name] = new Chart(ctx, {
+    charts[chartKey] = new Chart(ctx, {
         type: "line",
         data: {
             labels: labels,
             datasets: [
                 {
-                    label: "SLA Ping %",
+                    label: "Disponibilidade Ping (%)",
                     data: pingValues
                 },
                 {
-                    label: "SLA TCP %",
+                    label: "Disponibilidade TCP (%)",
                     data: tcpValues
                 },
                 {
-                    label: "SLA HTTP %",
+                    label: "Disponibilidade HTTP (%)",
                     data: httpValues
                 }
             ]
@@ -532,15 +515,11 @@ async function loadSLAChart(name) {
             animation: false,
             responsive: true,
             scales: {
-                y: {
-                    min: 0,
-                    max: 100
-                }
+                y: { min: 0, max: 100 }
             }
         }
     });
 }
-
 
 function showAlertCard(alert) {
     const box = document.getElementById("alert-container");
@@ -605,36 +584,6 @@ async function softDeleteHost(name) {
     }
 }
 
-async function loadHeatmap(name) {
-
-    const res = await fetchWithAuth(`${API}/host/heatmap/${name}`);
-    
-    if (!res || !res.ok) return;
-
-    const data = await res.json();
-
-    const box = document.getElementById("heatmap-" + name);
-    box.innerHTML = "";
-
-    data.forEach(p => {
-        const d = document.createElement("div");
-        d.className = "heat-cell";
-
-        if (p.latency == null)
-            d.style.background = "#444";
-        else if (p.latency < 50)
-            d.style.background = "#2ecc71";
-        else if (p.latency < 150)
-            d.style.background = "#f1c40f";
-        else
-            d.style.background = "#e74c3c";
-
-        d.title = p.time + " → " + p.latency + " ms";
-
-        box.appendChild(d);
-    });
-}
-
 async function toggleAvailabilityChart(name) {
     const box = document.getElementById(`availability-chart-box-${name}`);
     if (!box) return;
@@ -653,7 +602,7 @@ async function loadAvailability(name) {
     if (!ctx) return;
 
     try {
-        const response = await fetchWithAuth(`${API}/hosts/metrics/${name}/history`);
+        const response = await fetchWithAuth(`${API}/hosts/metrics/availability/host/${name}`);
         
         if (!response || !response.ok) return;
 
@@ -670,7 +619,7 @@ async function loadAvailability(name) {
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Disponibilidade (%)',
+                    label: 'Disponibilidade Host (%)',
                     data: values,
                     borderColor: '#2ecc71',
                     backgroundColor: 'rgba(46, 204, 113, 0.1)',

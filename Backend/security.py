@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 SECRET_KEY = "SUPER_SECRET_CHANGE_THIS"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 def hash_password(password: str) -> str:
     # O bcrypt precisa de bytes, então codificamos a string
