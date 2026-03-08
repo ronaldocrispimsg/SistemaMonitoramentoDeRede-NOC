@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from Backend.database import SessionLocal
+from Backend.database import SessionLocal, get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
@@ -12,14 +12,6 @@ from Backend.dependencies import get_current_user
 from Backend.security import verify_password, create_access_token, hash_password
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 
 @router.post("/host/create")
 def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
@@ -263,20 +255,22 @@ def availability_type(host_name: str, db: Session = Depends(get_db)):
                 CheckResult.check_type == check_type
             )
             .order_by(CheckResult.timestamp.desc())
-            .limit(300)
+            .limit(200)
             .all()
         )
-
         rows.reverse()
 
         points = []
+        total = len(rows)
+        if total == 0:
+            return points
+        
+        for i in range(1, total + 1):
+            start_index = max(0, i - window)
+            chunk = rows[start_index:i]
 
-        for i in range(window, len(rows) + 1):
-
-            chunk = rows[i-window:i]
             ok = sum(1 for r in chunk if r.success)
-
-            availability = (ok / window) * 100
+            availability = (ok / len(chunk)) * 100
 
             points.append({
                 "timestamp": chunk[-1].timestamp.isoformat(),
@@ -352,7 +346,7 @@ def downtime_history(host_name: str, db: Session = Depends(get_db)):
         for i in incidents
     ]
 
-@router.post("/login")
+@router.post("/auth/login")
 def login(data: dict, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == data["username"]).first()
 
@@ -368,10 +362,51 @@ def login(data: dict, db: Session = Depends(get_db)):
         "must_change_password": user.must_change_password
     }
 
-@router.post("/change-password")
-def change_password(data: dict, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == data["username"]).first()
+@router.post("/auth/first-password")
+def first_change_password(data: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
 
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    user.password_hash = hash_password(data["new_password"])
+    user.must_change_password = False
+    user.attempts = 0
+
+    db.commit()
+
+    return {"message": "Senha alterada com sucesso",
+            "logout": True
+    }
+
+@router.post("/auth/change-password")
+def change_password(data: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    # Verifica se conta está bloqueada
+    if user.locked:
+        raise HTTPException(status_code=403, detail="Conta bloqueada por muitas tentativas")
+
+    # Verifica senha atual
+    if not verify_password(data["current_password"], user.password_hash):
+
+        user.attempts += 1
+
+        if user.attempts >= 5:
+            user.locked = True
+            db.commit()
+            raise HTTPException(status_code=403, detail="Conta bloqueada após 5 tentativas")
+
+        db.commit()
+
+        raise HTTPException(
+            status_code=401,
+            detail=f"Senha atual incorreta ({user.attempts}/5)"
+        )
+
+    # Senha correta → reseta tentativas
+    user.attempts = 0
     user.password_hash = hash_password(data["new_password"])
     user.must_change_password = False
 

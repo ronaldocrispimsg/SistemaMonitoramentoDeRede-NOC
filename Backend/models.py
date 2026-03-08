@@ -113,4 +113,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, index=True)
     password_hash = Column(String)
+    attempts = Column(Integer, default=0)
+    locked = Column(Boolean, default=False)
     must_change_password = Column(Boolean, default=True)
+    locked_until = Column(DateTime, nullable=True)

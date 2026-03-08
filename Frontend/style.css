@@ -1,241 +1,324 @@
-body {
+/* =========================
+BASE
+========================= */
+
+body{
     font-family: Arial, sans-serif;
-    max-width: 900px;
-    margin: 40px auto;
+    background:#f4f6f8;
+    margin:0;
 }
 
-section {
-    margin-bottom: 30px;
+/* =========================
+LOGIN
+========================= */
+
+.login-page{
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
 }
 
-input {
-    padding: 6px;
-    margin: 4px;
+.login-box{
+    width:320px;
+    background:white;
+    padding:30px;
+    border-radius:10px;
+    box-shadow:0 4px 15px rgba(0,0,0,0.08);
+    text-align:center;
 }
 
-button {
-    padding: 6px 10px;
-    cursor: pointer;
+.login-box h1{
+    margin-bottom:20px;
 }
 
-.card {
-    transition: all 0.3s ease;
-    border: 1px solid #ddd; /* Contorno cinza claro */
-    background: #fff;       /* Fundo branco */
-    padding: 16px;
-    margin: 10px 0;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+.login-box input{
+    width: 300px;
+    margin:8px 0;
+    padding:10px;
+    border-radius:6px;
+    border:1px solid #ccc;
 }
 
-.status-indicator {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    margin-right: 8px;
-}
-
-.history-box {
-    margin-top: 8px;
-    font-size: 0.85em;
-    background: #bbbbbb;
-    padding: 6px;
-    border-radius: 6px;
-}
-
-.history-line {
-    background: #0f172a;
-    color: #e5e7eb;
-    padding: 6px 10px;
-    margin: 4px 0;
-    border-radius: 4px;
-}
-
-.line-success {
-    border-left: 4px solid #22c55e;
-}
-
-.line-error {
-    border-left: 4px solid #ef4444;
-}
-
-.type-badge {
-    color: #94a3b8;
-    font-weight: bold;
-}
-
-.card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.history-btn {
-    font-size: 12px;
-    padding: 4px 8px;
-    cursor: pointer;
-}
-.latency-btn {
-    font-size: 12px;
-    padding: 4px 8px;
-    cursor: pointer;
-}
-
-.update-btn {
-    font-size: 12px;
-    padding: 4px 8px;
-    cursor: pointer;
-}
-
-.delete-btn {
-    font-size: 12px;
-    padding: 4px 8px;
-    cursor: pointer;
-}
-
-.hidden {
-    display: none !important;
-}
-
-.button-group button {
-    width: 90px;
-    padding: 5px;
-    font-size: 0.85em;
-    cursor: pointer;
-    border-radius: 4px;
-    border: 1px solid #ccc;
-    background: #f8f9fa;
-}
-
-.button-group button:hover {
-    background: #e2e6ea;
-}
-
-#alert-container {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
+.login-box button{
     width: 320px;
-    z-index: 9999;
+    margin-top:10px;
+    padding:10px;
+    border-radius:6px;
+    border:none;
+    background:#c9c9c9;
+    color:white;
+    font-weight:bold;
+    cursor:pointer;
 }
 
-.alert-card {
-    background: gray;
-    color: white;
-    padding: 12px;
-    border-radius: 8px;
-    margin-top: 10px;
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
-    animation: slideIn 0.3s ease-out;
+.login-box button:hover{
+    background:#8d8d8d;
 }
 
-.alert-up {
-    border-left: 10px solid #28a745;
+/* =========================
+LAYOUT DASHBOARD
+========================= */
+
+.container{
+    max-width:900px;
+    margin:40px auto;
 }
 
-.alert-down {
-    border-left: 10px solid #dc3545;
+section{
+    margin-bottom:30px;
 }
 
-.alert-degraded {
-    border-left: 10px solid #ffc107;
+input{
+    padding:6px;
+    margin:4px;
 }
 
-@keyframes slideIn {
-    from { transform: translateX(40px); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
+button{
+    padding:6px 10px;
+    cursor:pointer;
 }
 
-.modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.55);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
+/* =========================
+BOTÕES SUPERIORES
+========================= */
+
+.top-actions{
+    display:flex;
+    gap:10px;
+    margin-bottom:20px;
 }
 
-.modal-content {
-  background: #ffffff;
-  padding: 20px;
-  border-radius: 8px;
-  width: 320px;
+.top-actions button{
+    padding:8px 14px;
+    border:none;
+    border-radius:6px;
+    background:#c9c9c9;
+    color:white;
+    font-weight:bold;
 }
 
-.modal input {
-  width: 93%;
-  margin-bottom: 10px;
+.top-actions button:hover{
+    background:#8d8d8d;
 }
 
-.hidden {
-  display: none;
+/* =========================
+CARDS HOST
+========================= */
+
+.card{
+    transition:all 0.3s ease;
+    border:1px solid #ddd;
+    background:#fff;
+    padding:16px;
+    margin:10px 0;
+    border-radius:8px;
+    box-shadow:0 2px 4px rgba(0,0,0,0.05);
 }
 
-.heatmap-box {
-    margin-top: 10px;
-    padding: 6px;
+.card-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
 }
 
-.heat-cell {
-    width: 14px;
-    height: 14px;
-    display: inline-block;
-    margin: 1px;
-    border-radius: 3px;
+/* =========================
+STATUS
+========================= */
+
+.status-indicator{
+    display:inline-block;
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    margin-right:8px;
 }
 
-.timeline-container {
-    margin-top: 30px;
-    padding: 20px;
-    background: #f8fafc;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
+.bg-success{ background:#28a745; }
+.bg-danger{ background:#dc3545; }
+.bg-warning{ background:#ffc107; }
+.bg-secondary{ background:#6c757d; }
+
+/* =========================
+SEVERITY
+========================= */
+
+.severity-indicator{
+    display:inline-block;
+    font-weight:bold;
+    margin-left:5px;
+    font-size:14px;
 }
 
-.timeline-item {
-    padding: 10px;
-    border-left: 3px solid #cbd5e1;
-    margin-bottom: 10px;
-    background: white;
-    border-radius: 0 4px 4px 0;
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.02);
+.sev-healthy{ color:#2ecc71; }
+.sev-warning{ color:#f1c40f; }
+.sev-degraded{ color:#e67e22; }
+.sev-critical{ color:#e74c3c; }
+.sev-unknown{ color:#888; }
+
+/* =========================
+BOTÕES DOS CARDS
+========================= */
+
+.button-group button{
+    width:90px;
+    padding:5px;
+    font-size:0.85em;
+    border-radius:4px;
+    border:1px solid #ccc;
+    background:#f8f9fa;
 }
 
-.timeline-item.text-danger { border-left-color: #ef4444; }
-.timeline-item.text-success { border-left-color: #22c55e; }
-
-.text-danger { color: #b91c1c; }
-.text-success { color: #15803d; }
-
-.bg-success { background-color: #28a745; } /* Verde */
-.bg-danger { background-color: #dc3545; }  /* Vermelho */
-.bg-warning { background-color: #ffc107; } /* Amarelo */
-.bg-secondary { background-color: #6c757d; } /* Cinza */
-
-.severity-indicator {
-    display: inline-block;
-    font-weight: bold;
-    margin-left: 5px;
-    font-size: 14px;
+.button-group button:hover{
+    background:#e2e6ea;
 }
 
-.sev-healthy  { color: #2ecc71; }  /* verde */
-.sev-warning  { color: #f1c40f; }  /* amarelo */
-.sev-degraded { color: #e67e22; }  /* laranja */
-.sev-critical { color: #e74c3c; }  /* vermelho */
-.sev-unknown  { color: #888; }
+/* =========================
+HISTÓRICO
+========================= */
 
-/* Remove setas no Chrome, Safari, Edge e Opera */
+.history-box{
+    margin-top:8px;
+    font-size:0.85em;
+    background:#bbbbbb;
+    padding:6px;
+    border-radius:6px;
+}
+
+.history-line{
+    background:#0f172a;
+    color:#e5e7eb;
+    padding:6px 10px;
+    margin:4px 0;
+    border-radius:4px;
+}
+
+.line-success{ border-left:4px solid #22c55e; }
+.line-error{ border-left:4px solid #ef4444; }
+
+.type-badge{
+    color:#94a3b8;
+    font-weight:bold;
+}
+
+/* =========================
+ALERTAS
+========================= */
+
+#alert-container{
+    position:fixed;
+    bottom:20px;
+    right:20px;
+    width:320px;
+    z-index:9999;
+}
+
+.alert-card{
+    background:gray;
+    color:white;
+    padding:12px;
+    border-radius:8px;
+    margin-top:10px;
+    box-shadow:0 0 10px rgba(255,255,255,0.4);
+    animation:slideIn 0.3s ease-out;
+}
+
+.alert-up{ border-left:10px solid #28a745; }
+.alert-down{ border-left:10px solid #dc3545; }
+.alert-degraded{ border-left:10px solid #ffc107; }
+
+@keyframes slideIn{
+    from{ transform:translateX(40px); opacity:0; }
+    to{ transform:translateX(0); opacity:1; }
+}
+
+/* =========================
+MODAL
+========================= */
+
+.modal{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.35);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    z-index:9999;
+}
+
+.modal-content{
+    width:320px;
+    background:white;
+    padding:30px;
+    border-radius:10px;
+    box-shadow:0 4px 15px rgba(0,0,0,0.08);
+    text-align:center;
+}
+
+.modal-content input{
+    width: 300px;;
+    margin:8px 0;
+    padding:10px;
+    border-radius:6px;
+    border:1px solid #ccc;
+}
+
+.modal-actions button{
+    width: 320px;;
+    margin-top:10px;
+    padding:10px;
+    border-radius:6px;
+    border:none;
+    background:#c9c9c9;
+    color:white;
+    font-weight:bold;
+}
+
+.modal-actions button:hover{
+    background:#8d8d8d;
+}
+
+.hidden{
+    display:none !important;
+}
+
+/* =========================
+TIMELINE INCIDENTES
+========================= */
+
+.timeline-container{
+    margin-top:30px;
+    padding:20px;
+    background:#f8fafc;
+    border-radius:8px;
+    border:1px solid #e2e8f0;
+}
+
+.timeline-item{
+    padding:10px;
+    border-left:3px solid #cbd5e1;
+    margin-bottom:10px;
+    background:white;
+    border-radius:0 4px 4px 0;
+}
+
+.timeline-item.text-danger{ border-left-color:#ef4444; }
+.timeline-item.text-success{ border-left-color:#22c55e; }
+
+.text-danger{ color:#b91c1c; }
+.text-success{ color:#15803d; }
+
+/* =========================
+REMOVER SETAS NUMBER INPUT
+========================= */
+
 input::-webkit-outer-spin-button,
-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+input::-webkit-inner-spin-button{
+    -webkit-appearance:none;
+    margin:0;
 }
 
-/* Remove setas no Firefox */
-input[type=number] {
-  -moz-appearance: textfield;
-  appearance: textfield;
+input[type=number]{
+    -moz-appearance:textfield;
+    appearance:textfield;
 }

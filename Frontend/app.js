@@ -5,6 +5,20 @@ if (Notification.permission !== "granted") {
     Notification.requestPermission();
 }
 
+const token = localStorage.getItem("token");
+const isLoginPage = window.location.pathname.includes("login.html");
+
+
+// se estiver logado e abrir login → vai pro dashboard
+if (token && isLoginPage) {
+    window.location.href = "index.html";
+}
+
+// se NÃO estiver logado e tentar acessar sistema → volta pro login
+if (!token && !isLoginPage) {
+    window.location.href = "login.html";
+}
+
 // ======================
 // Helper: Requisições Autenticadas
 // ======================
@@ -19,9 +33,10 @@ async function fetchWithAuth(url, options = {}) {
     try {
         const response = await fetch(url, { ...options, headers });
         
-        if (response.status === 401) {
+        if (!response || response.status === 401) {
             alert("Sessão expirada. Por favor, faça login novamente.");
             localStorage.clear();
+            window.location.href = "login.html";
             return null;
         }
         
@@ -36,66 +51,107 @@ async function fetchWithAuth(url, options = {}) {
 // ======================
 // Login
 // ======================
-document.getElementById("loginForm").onsubmit = async function(e) {
-    e.preventDefault();
-    const userVal = document.getElementById("username").value;
-    const passVal = document.getElementById("password").value;
+const loginForm = document.getElementById("loginForm");
 
-    try {
-        const response = await fetch(`${API}/login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: userVal, password: passVal })
-        });
+if (loginForm) {
+    loginForm.onsubmit = async function(e) {
+        e.preventDefault();
+        const userVal = document.getElementById("username").value;
+        const passVal = document.getElementById("password").value;
 
-        const data = await response.json();
+        try {
+            const response = await fetch(`${API}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: userVal, password: passVal })
+            });
 
-        if (response.ok && data.access_token) {
-            localStorage.setItem("token", data.access_token);
-            localStorage.setItem("username", userVal); // Guardamos para usar na troca
+            const data = await response.json();
 
-            // VERIFICA SE PRECISA TROCAR SENHA
-            if (data.must_change_password) {
-                document.getElementById("pwdModal").classList.remove("hidden");
+            if (response.ok && data.access_token) {
+                localStorage.setItem("token", data.access_token);
+                localStorage.setItem("username", userVal); // Guardamos para usar na troca
+
+                // VERIFICA SE PRECISA TROCAR SENHA
+                if (data.must_change_password) {
+                    document.getElementById("pwdModal").classList.remove("hidden");
+                } else {
+                    alert("Login realizado com sucesso!");
+                    window.location.href="index.html";
+                }
             } else {
-                alert("Login realizado com sucesso!");
-                loadHosts();
+                alert("Erro: " + (data.detail || "Credenciais inválidas"));
             }
-        } else {
-            alert("Erro: " + (data.detail || "Credenciais inválidas"));
+        } catch (err) {
+            alert("Não foi possível conectar ao servidor.");
         }
-    } catch (err) {
-        alert("Não foi possível conectar ao servidor.");
-    }
-};
+    };
+}
 
-// FUNÇÃO PARA ENVIAR A NOVA SENHA
-async function submitChangePassword() {
+async function submitChangePassword(){
+
     const newPwd = document.getElementById("new-pwd").value;
     const confirmPwd = document.getElementById("confirm-pwd").value;
-    const username = localStorage.getItem("username");
 
-    if (newPwd !== confirmPwd) return alert("As senhas não coincidem!");
-    if (newPwd.length < 4) return alert("Senha muito curta!");
+    if(newPwd !== confirmPwd)
+        return alert("Senhas não coincidem");
 
-    const res = await fetch(`${API}/change-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            username: username,
-            new_password: newPwd
+    const token = localStorage.getItem("token");
+
+    const res = await fetch(`${API}/auth/first-password`,{
+        method:"POST",
+        headers:{ 
+            "Content-Type":"application/json",
+            "Authorization": "Bearer " + token
+        },
+        body:JSON.stringify({
+            new_password:newPwd
         })
     });
 
-    if (res.ok) {
-        alert("Senha alterada! Agora você já pode usar o sistema.");
-        document.getElementById("pwdModal").classList.add("hidden");
-        loadHosts();
-    } else {
-        alert("Erro ao alterar senha.");
+    if(res.ok){
+        alert("Senha alterada! Sistema Liberado.");
+        window.location.href="index.html";
+    }else{
+        alert("Erro ao alterar senha");
     }
 }
 
+async function changePassword(){
+    const currentPwd = document.getElementById("current-pwd").value;
+    const newPwd = document.getElementById("new-pwd").value;
+    const confirmPwd = document.getElementById("confirm-pwd").value;
+
+    if (newPwd !== confirmPwd) return alert("As senhas não coincidem!");
+    if (newPwd.length < 6) return alert("Senha muito curta!");
+
+    const token = localStorage.getItem("token");
+
+    const res = await fetch(`${API}/auth/change-password`,{
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json",
+            "Authorization":"Bearer "+token
+        },
+        body: JSON.stringify({
+            current_password:currentPwd,
+            new_password:newPwd
+        })
+    });
+
+    if(res.status === 403){
+        alert("Conta bloqueada. Contate o administrador.");
+    }
+
+    if(res.ok){
+        alert("Senha alterada com sucesso!");
+        localStorage.removeItem("token");
+        window.location.href = "login.html";
+    }else{
+        alert("Erro ao alterar senha");
+    }
+
+}
 // ======================
 // Cadastrar Host (POST)
 // ======================
@@ -177,9 +233,9 @@ async function loadHosts() {
             card.innerHTML = `
                 <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <strong>${h.name}</strong> 
+                        <strong class="host-title">${h.name}</strong>
                         <span class="status-indicator ${statusColor}"></span>
-                        <small>(${h.address}${h.port ? ':' + h.port : ''})</small>
+                        <small class="host-addr">(${h.address}${h.port ? ':' + h.port : ''})</small>
                         </br><small>Saúde: ${h.health_score}%<span class="severity-indicator ${sevClass}">✚</span></small>
                         </br><small>Taxa de sucesso (ping): ${h.sla_rolling_ping ?? "N/A"}%</small>
                         </br><small>Taxa de sucesso (tcp): ${h.sla_rolling_tcp ?? "N/A"}%</small>
@@ -216,7 +272,7 @@ async function loadHosts() {
                     <i>Atualizando...</i>
                 </div>
                 <small style="color: #666;">
-                    <b>Disponibilidade nos ultimos 10 minutos:</b> ${h.availability_10m.toFixed(2)}%
+                    <b>Disponibilidade nos ultimos 10 minutos:</b> ${h.availability_10m ? h.availability_10m.toFixed(2) : "N/A"}%
                 </small>
                 <div id="chart-container-${h.name}" class="hidden" style="margin-top: 10px;">
                     <canvas id="chart-${h.name}" height="120"></canvas>
@@ -241,7 +297,7 @@ async function loadHosts() {
             
             // ATUALIZA OS DADOS DE PING/TCP
             loadLastResult(h.name);
-            availability_10m = h.availability_10m.toFixed(2);
+            const availability_10m = h.availability_10m.toFixed(2);
 
             // SE O GRÁFICO ESTIVER ABERTO, ATUALIZA ELE TAMBÉM
             const container = document.getElementById("chart-container-" + h.name);
@@ -412,8 +468,11 @@ async function submitModalEdit() {
 }
 
 async function loadLatencyChart(name) {
-    if (charts[name]) charts[name].destroy();
+    const chartKey = `latency-${name}`;
 
+    if (charts[chartKey]) {
+        charts[chartKey].destroy();
+    }
     const res = await fetchWithAuth(`${API}/host/history/${name}`);
     
     if (!res || !res.ok) return;
@@ -436,7 +495,7 @@ async function loadLatencyChart(name) {
 
     if (!ctx) return;
 
-    charts[name] = new Chart(ctx, {
+    charts[chartKey] = new Chart(ctx, {
         type: "line",
         data: {
             labels: labels,
@@ -499,15 +558,27 @@ async function loadAvailabilityChartType(name) {
             datasets: [
                 {
                     label: "Disponibilidade Ping (%)",
-                    data: pingValues
+                    data: pingValues,
+                    borderColor: '#2ecc71',
+                    backgroundColor: '#2ecc7133',
+                    tension: 0.3,
+                    fill: true
                 },
                 {
                     label: "Disponibilidade TCP (%)",
-                    data: tcpValues
+                    data: tcpValues,
+                    borderColor: "#3498db",
+                    backgroundColor: '#3498db33',
+                    tension: 0.3,
+                    fill: true
                 },
                 {
                     label: "Disponibilidade HTTP (%)",
-                    data: httpValues
+                    data: httpValues,
+                    borderColor: "#f39c12",
+                    backgroundColor: '#f39c1233',
+                    tension: 0.3,
+                    fill: true
                 }
             ]
         },
@@ -612,9 +683,13 @@ async function loadAvailability(name) {
         const values = data.map(p => p.availability);
 
         // Destruir se já existir para evitar bugs visuais ao passar o mouse
-        if (charts[`avail-${name}`]) charts[`avail-${name}`].destroy();
+        const chartKey = `availability-${name}`;
 
-        charts[`avail-${name}`] = new Chart(ctx, {
+        if (charts[chartKey]) {
+            charts[chartKey].destroy();
+        }
+
+        charts[chartKey] = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
@@ -622,7 +697,7 @@ async function loadAvailability(name) {
                     label: 'Disponibilidade Host (%)',
                     data: values,
                     borderColor: '#2ecc71',
-                    backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                    backgroundColor: '#2ecc7133',
                     tension: 0.3,
                     fill: true
                 }]
@@ -699,8 +774,18 @@ setInterval(loadHosts, 5000);
 setInterval(loadTimeline, 5000);
 setInterval(checkAlerts, 2500);
 
-document.getElementById("refreshBtn").addEventListener("click", loadHosts);
-window.onload = loadHosts;
+const refreshBtn = document.getElementById("refreshBtn");
+if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+    await loadHosts();
+    alert("Hosts atualizados!");
+});
+}
+
+window.onload = () => {
+    loadHosts();
+    loadTimeline();
+};
 
 window.onclick = function(event) {
         const modal = document.getElementById("editModal");
@@ -709,7 +794,23 @@ window.onclick = function(event) {
         }
     };
 
-document.getElementById("logoutBtn").onclick = () => {
-    localStorage.removeItem("token");
-    window.location.reload(); // Recarrega para voltar ao estado de login
+const changePwdBtn = document.getElementById("changePasswordBtn");
+
+if(changePwdBtn){
+    changePwdBtn.onclick = () =>{
+        document.getElementById("changePwdModal").classList.remove("hidden");
+    }
+}
+
+function closeChangePwdModal(){
+    document.getElementById("changePwdModal").classList.add("hidden");
+}
+
+const logoutBtn = document.getElementById("logoutBtn");
+
+if (logoutBtn) {
+    logoutBtn.onclick = () => {
+        localStorage.removeItem("token");
+        window.location.href = "login.html";
+    };
 };

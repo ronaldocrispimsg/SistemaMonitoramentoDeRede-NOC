@@ -51,9 +51,9 @@ def create_default_admin():
         )
         db.add(novo_admin)
         db.commit()
-        print("Usuários: admin criado com sucesso!")
+        print("Banco de dados: usuario admin criado com sucesso!")
     else:
-        print("Usuarios: admin já existe.")
+        print("Banco de dados: usuario admin já existe.")
     db.close()
 
 if __name__ == "__main__":
