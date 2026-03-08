@@ -155,58 +155,64 @@ async function changePassword(){
 // ======================
 // Cadastrar Host (POST)
 // ======================
-document.getElementById("hostForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+const hostForm = document.getElementById("hostForm");
 
-    // Selecionando os elementos de forma explícita (mais seguro)
-    const nameInput = document.getElementById("name");
-    const addressInput = document.getElementById("address");
-    const portInput = document.getElementById("port");
-    const httpUrlInput = document.getElementById("http_url");
-    
-    const data = {
-        name: nameInput.value,
-        address: addressInput.value,
-        port: portInput.value ? parseInt(portInput.value) : null,
-        http_url: httpUrlInput.value
-    };
+if (hostForm) {
+    hostForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
 
-    try {
-        const response = await fetchWithAuth(`${API}/host/create`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
+        const nameInput = document.getElementById("name");
+        const addressInput = document.getElementById("address");
+        const portInput = document.getElementById("port");
+        const httpUrlInput = document.getElementById("http_url");
 
-        if (response.ok) {
-            // Limpa o formulário após sucesso
-            nameInput.value = "";
-            addressInput.value = "";
-            portInput.value = "";
-            httpUrlInput.value = "";
-            loadHosts();
-        } else {
-            const errorData = await response.json();
-            alert("Erro ao cadastrar: " + (errorData.detail || "Erro desconhecido"));
+        const data = {
+            name: nameInput.value,
+            address: addressInput.value,
+            port: portInput.value ? parseInt(portInput.value) : null,
+            http_url: httpUrlInput.value
+        };
+
+        try {
+            const response = await fetchWithAuth(`${API}/host/create`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            });
+
+            if (!response) return;
+
+            if (response.ok) {
+                nameInput.value = "";
+                addressInput.value = "";
+                portInput.value = "";
+                httpUrlInput.value = "";
+                loadHosts();
+            } else {
+                const errorData = await response.json();
+                alert("Erro ao cadastrar: " + (errorData.detail || "Erro desconhecido"));
+            }
+        } catch (err) {
+            console.error("Erro na requisição:", err);
+            alert("Não foi possível conectar ao servidor.");
         }
-    } catch (err) {
-        console.error("Erro na requisição:", err);
-        alert("Não foi possível conectar ao servidor.");
-    }
-});
+    });
+}
 
 // ======================
 // Listar e Atualizar Hosts
 // ======================
 async function loadHosts() {
     const div = document.getElementById("hosts");
-    
+    if (!div) return;
+
     try {
         const res = await fetchWithAuth(`${API}/hosts/list`);
-        if (res.status === 401) {
-            div.innerHTML = "<p style='color:orange'>⚠ Faça login para ver os hosts.</p>";
+        if (!res) {
+            div.innerHTML = "<p style='color:orange'>⚠ Não foi possível carregar os hosts.</p>";
             return;
         }
+
         const hosts = await res.json();
 
         hosts.forEach(h => {
@@ -260,6 +266,9 @@ async function loadHosts() {
                         <button onclick="toggleAvailabilityChart('${h.name}')">
                             Gráfico de disponibilidade geral
                         </button>
+                        <button onclick="toggleHeatmap(${h.id}, '${h.name}')">
+                            Heatmap
+                        </button>
                         <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}')">
                             Editar
                         </button>
@@ -284,6 +293,7 @@ async function loadHosts() {
                     <canvas id="availability-chart-${h.name}" height="120"></canvas>
                 </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
+                <div id="heatmap-${h.id}" class="heatmap-box" hidden></div>
                 
             `;
 
@@ -348,7 +358,7 @@ async function loadLastResult(name) {
         ${lastHttp ? `
         <div>
             <span class="status-indicator ${httpDot}"></span>
-            HTTP: ${lastHttp.latency ?? "N/A"} ms ${lastHttp.status_code ?? lastHttp.error ?? ""}
+            HTTP ${lastHttp.status_code ?? lastHttp.error ?? ""}: ${lastHttp.latency ?? "N/A"} ms
         </div>` : ''}
     `;
 }
@@ -372,11 +382,12 @@ async function loadHistory(name) {
         box.innerHTML = data.checks.map(c => {
             const statusClass = c.success ? "line-success" : "line-error";
             const statusText = c.success ? "OK" : "FAIL";
-
+            const statusInfo = c.status_code ? `HTTP ${c.status_code ?? c.error ?? ""} — ` : "";
             return `
                 <div class="history-line ${statusClass}">
                     <span class="type-badge">[${c.type.toUpperCase()}]</span> 
                     <strong>${statusText}</strong> —
+                    ${statusInfo}
                     ${c.latency !== null ? c.latency + " ms" : "---"} —
                     <small>${new Date(c.timestamp).toLocaleTimeString()}</small>
                 </div>
@@ -399,6 +410,23 @@ async function toggleHistory(name) {
     box.classList.remove("hidden");
     await loadHistory(name);
 }
+
+async function toggleHeatmap(hostId, hostName) {
+    const box = document.getElementById(`heatmap-${hostId}`);
+    if (!box) return;
+
+    box.hidden = !box.hidden;
+
+    if (box.hidden) return;
+
+    const res = await fetchWithAuth(`${API}/metrics/heatmap/${hostId}`);
+    if (!res) return;
+
+    const data = await res.json();
+
+    renderHeatmap(box, data, hostName);
+}
+
 async function toggleLatencyChart(name) {
     const container = document.getElementById("chart-container-" + name);
     if (!container) return;
@@ -519,6 +547,34 @@ async function loadLatencyChart(name) {
             animation: false
         }
     });
+}
+
+function renderHeatmap(container, data, hostName) {
+    if (!data || data.length === 0) {
+        container.innerHTML = "<p>Sem dados para heatmap.</p>";
+        return;
+    }
+
+    let html = `<h4>Heatmap de Latência - ${hostName}</h4>`;
+    html += `<div class="heatmap-grid">`;
+
+    for (const item of data.slice(-100)) {
+        let cls = "heat-low";
+
+        if (!item.success) {
+            cls = "heat-fail";
+        } else if (item.latency > 300) {
+            cls = "heat-high";
+        } else if (item.latency > 100) {
+            cls = "heat-medium";
+        }
+
+        const title = `${item.check_type} | Latência: ${item.latency} ms | ${item.timestamp}`;
+        html += `<div class="heat-cell ${cls}" title="${title}"></div>`;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
 }
 
 async function loadAvailabilityChartType(name) {
@@ -776,10 +832,7 @@ setInterval(checkAlerts, 2500);
 
 const refreshBtn = document.getElementById("refreshBtn");
 if (refreshBtn) {
-    refreshBtn.addEventListener("click", async () => {
-    await loadHosts();
-    alert("Hosts atualizados!");
-});
+    refreshBtn.addEventListener("click", loadHosts);
 }
 
 window.onload = () => {

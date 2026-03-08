@@ -43,3 +43,6 @@ poetry.lock
 .cache/
 .pytest_cache/
 .mypy_cache/
+
+# ===== Outros =====
+notifications.py

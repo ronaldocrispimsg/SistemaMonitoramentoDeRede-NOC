@@ -37,6 +37,14 @@ class Host(Base):
     checks = relationship("CheckResult", back_populates="host")
     health_score = Column(Integer, default=0)
     severity = Column(String, default="UNKNOWN")
+    last_preventive_alert = Column(DateTime, nullable=True)
+
+    cpu_usage = Column(Float, nullable=True)
+    ram_usage = Column(Float, nullable=True)
+    disk_usage = Column(Float, nullable=True)
+    disk_remaining = Column(Float, nullable=True)
+    network_traffic = Column(Float, nullable=True)
+    snmp_community = Column(String, default="public")
     
     sla_rolling_ping = Column(Float, nullable=True)
     sla_rolling_tcp = Column(Float, nullable=True)
@@ -67,7 +75,8 @@ class CheckResult(Base):
     success = Column(Boolean)
     latency = Column(Float, nullable=True)
     error = Column(String, nullable=True)
-
+    status_code = Column(Integer, nullable=True)
+    
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     host = relationship("Host", back_populates="checks")

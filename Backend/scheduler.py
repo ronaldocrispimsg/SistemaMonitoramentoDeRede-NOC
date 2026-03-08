@@ -1,11 +1,13 @@
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from sqlalchemy.orm import Session
 from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached, http_check
-from Backend.metrics import calc_jitter_http, calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_http, calc_sla_rolling_ping, calc_sla_rolling_tcp, refine_severity, compute_health, calc_latency_trend_ping, classify_trend, calc_latency_trend_http, classify_trend_http
+from Backend.metrics import apply_preventive_logic, calc_jitter_http, calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_http, calc_sla_rolling_ping, calc_sla_rolling_tcp, max_severity, refine_severity, compute_health, calc_latency_trend_ping, classify_trend, calc_latency_trend_http, classify_trend_http
+from Backend.notifications import send_telegram_alert
+from Backend.snmp_engine import update_host_snmp
 from Backend.utils import close_incident, consecutive_failures, open_incident
 
 scheduler = BackgroundScheduler()
@@ -22,6 +24,7 @@ def check_all_hosts():
         for host in hosts:
             try:
                 old_status = host.status
+                old_severity = host.severity
 
                 # =====================
                 # DNS
@@ -62,6 +65,7 @@ def check_all_hosts():
                 if not ips:
                     host.status = "DOWN"
                     host.last_resolved_ip = None
+                    host.last_check = datetime.utcnow()
 
                     db.add(CheckResult(
                         host_id=host.id,
@@ -74,6 +78,11 @@ def check_all_hosts():
 
                     host.fail_streak = (host.fail_streak or 0) + 1
                     host.success_streak = 0
+
+                    db.flush()
+
+                    if consecutive_failures(db, host.id, limit=3, check_types=["dns"]):
+                        open_incident(db, host, "Falha na resolução DNS", auto_commit=False)
 
                     db.commit()
                     continue
@@ -132,18 +141,17 @@ def check_all_hosts():
                 # Porta diferente mas definida
                 elif host.port:
                     url = f"http://{host.address}:{host.port}"
-
+                    
                 # Executa check se montou URL
                 if url:
                     http_result = http_check(url)
 
-                    
                 score, severity = compute_health(ping_result, tcp_result, http_result)
 
                 host.health_score = score
                 host.severity = severity
 
-                if severity == "CRITICAL":
+                if old_severity != "CRITICAL" and severity == "CRITICAL":
                     db.add(Alert(
                         host_id=host.id,
                         alert_type="HEALTH_CRITICAL",
@@ -155,11 +163,11 @@ def check_all_hosts():
                 # STATUS ENGINE (CORRETO)
                 # =====================
 
-                if http_result and not http_result["success"]:
-                    new_status = "DEGRADED"
-
-                elif http_result and http_result.get("status_code") and 500 <= http_result["status_code"] < 600:
+                if http_result and http_result.get("status_code") and 500 <= http_result["status_code"] < 600:
                     new_status = "CRITICAL"
+
+                elif http_result and not http_result["success"]:
+                    new_status = "DEGRADED"
                 
                 elif not ping_result["success"] and not tcp_result:
                     new_status = "DOWN"
@@ -242,16 +250,11 @@ def check_all_hosts():
                         check_type="http",
                         success=http_result["success"],
                         latency=http_result.get("latency"),
-                        error=http_result.get("error")
+                        error=http_result.get("error"),
+                        status_code=http_result.get("status_code")
                     ))
 
                 db.flush()
-
-                if consecutive_failures(db,host.id, limit=3):
-                    open_incident(db, host.name, "Host indisponível")
-
-                elif severity == "HEALTHY" or severity == "WARNING":
-                    close_incident(db, host.name)
 
                 host.sla_rolling_ping = calc_sla_rolling_ping(db, host.id, 50)
                 host.jitter_ms_ping = calc_jitter_ping(db, host.id, 10)
@@ -278,8 +281,51 @@ def check_all_hosts():
                     host.jitter_ms_tcp,
                     host.jitter_ms_http
                 )
-                db.commit()
 
+                snmp_data = None
+
+                if host.status == "UP":
+                    try:
+                        snmp_data = update_host_snmp(host, db)
+                    except Exception as e:
+                        print(f"[SNMP ERROR] {host.name}: {e}")
+
+                preventive_severity, preventive_reasons = apply_preventive_logic(host, snmp_data)
+
+                host.severity = max_severity(host.severity, preventive_severity)
+
+                final_status = host.status
+
+                primary_checks = ["ping"]
+                if host.http_url:
+                    primary_checks = ["http"]
+                elif host.port:
+                    primary_checks = ["tcp"]
+
+                if consecutive_failures(db, host.id, limit=3, check_types=primary_checks):
+                    open_incident(db, host, "Host indisponível", auto_commit=False)
+                elif final_status == "UP":
+                    close_incident(db, host.name, auto_commit=False)
+                                    
+                if host.severity in ("WARNING", "DEGRADED", "CRITICAL"):
+                    if (
+                        not host.last_preventive_alert or
+                        datetime.utcnow() - host.last_preventive_alert > timedelta(minutes=30)
+                    ):
+                        reason_text = ", ".join(preventive_reasons[:4]) if preventive_reasons else "Risco detectado"
+
+                        send_telegram_alert(
+                            f"⚠️ <b>Alerta Preventivo</b>\n"
+                            f"Host: {host.name}\n"
+                            f"Endereço: {host.address}\n"
+                            f"Severidade: {host.severity}\n"
+                            f"Motivos: {reason_text}\n"
+                            f"Score: {host.health_score}"
+                        )
+
+                        host.last_preventive_alert = datetime.utcnow()
+
+                db.commit()
             except Exception as e:
                 print(f"[HOST ERROR] {host.name}: {e}")
                 db.rollback()
@@ -339,5 +385,3 @@ def start_scheduler():
     )
 
     scheduler.start()
-
-

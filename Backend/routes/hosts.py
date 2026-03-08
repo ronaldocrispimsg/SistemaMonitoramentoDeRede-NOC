@@ -5,6 +5,7 @@ from Backend.database import SessionLocal, get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
+from Backend.notifications import telegram_health_check
 from Backend.schemas import HostCreate, HostUpdate
 from Backend.utils import is_ip, normalize_http_url, reverse_dns
 from fastapi.security import OAuth2PasswordRequestForm
@@ -12,6 +13,11 @@ from Backend.dependencies import get_current_user
 from Backend.security import verify_password, create_access_token, hash_password
 
 router = APIRouter()
+
+def _resolve_http_url(address: str, http_url: str | None, port: int | None) -> str | None:
+    clean_http = (http_url or "").strip()
+    base = clean_http if clean_http else address
+    return normalize_http_url(base, port) if base else None
 
 @router.post("/host/create")
 def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
@@ -36,9 +42,11 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             existing_host.port = data.port
             existing_host.hostname_resolved = resolved
 
-            if data.http_url is not None:
-                normalized_url = normalize_http_url(data.http_url, data.port or existing_host.port)
-                existing_host.http_url = normalized_url
+            existing_host.http_url = _resolve_http_url(
+                data.address,
+                data.http_url,
+                data.port or existing_host.port
+            )
 
             db.commit()
             db.refresh(existing_host)
@@ -54,9 +62,11 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             hostname_resolved=resolved,
         )
 
-        if data.http_url is not None:
-            normalized_url = normalize_http_url(data.http_url, data.port or host.port)
-            host.http_url = normalized_url
+        host.http_url = _resolve_http_url(
+            data.address,
+            data.http_url,
+            data.port or host.port
+        )
 
         db.add(host)
         db.commit()
@@ -160,6 +170,7 @@ def host_history(host_name: str, db: Session = Depends(get_db)):
                 "success": c.success,
                 "latency": c.latency,
                 "error": c.error,
+                "status_code": c.status_code,
                 "timestamp": c.timestamp.isoformat()
             }
             for c in checks
@@ -199,9 +210,11 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
     host.port = data.port
     host.hostname_resolved = resolved
 
-    if data.http_url is not None:
-        normalized_url = normalize_http_url(data.http_url, data.port or host.port)
-        host.http_url = normalized_url
+    host.http_url = _resolve_http_url(
+        data.address,
+        data.http_url,
+        data.port or host.port
+    )
 
     db.commit()
 
@@ -435,3 +448,69 @@ def get_latest_incidents(db: Session = Depends(get_db), user: str = Depends(get_
         }
         for i in incidents
     ]
+
+@router.get("/metrics/heatmap/{host_id}")
+def get_heatmap(host_id: int, db: Session = Depends(get_db)):
+    host = db.query(Host).filter(Host.id == host_id).first()
+
+    if not host:
+        raise HTTPException(status_code=404, detail="Host não encontrado")
+
+    # Escolhe o tipo mais "saudável" recentemente:
+    # maior taxa de sucesso e, em empate, menor latência média.
+    candidates = []
+    for check_type in ("ping", "tcp", "http"):
+        rows = (
+            db.query(CheckResult)
+            .filter(
+                CheckResult.host_id == host.id,
+                CheckResult.check_type == check_type
+            )
+            .order_by(CheckResult.timestamp.desc())
+            .limit(30)
+            .all()
+        )
+
+        if not rows:
+            continue
+
+        total = len(rows)
+        successes = sum(1 for r in rows if r.success)
+        success_rate = successes / total
+
+        latencies = [r.latency for r in rows if r.latency is not None]
+        avg_latency = sum(latencies) / len(latencies) if latencies else float("inf")
+
+        candidates.append((check_type, success_rate, avg_latency))
+
+    if candidates:
+        preferred_type = max(candidates, key=lambda item: (item[1], -item[2]))[0]
+    else:
+        preferred_type = "ping"
+
+    results = (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host.id,
+            CheckResult.check_type == preferred_type
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(100)
+        .all()
+    )
+
+    data = []
+    for r in results:
+        data.append({
+            "check_type": r.check_type,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "latency": r.latency,
+            "success": r.success,
+            "error": r.error
+        })
+
+    return data
+
+@router.get("/health/telegram")
+def check_telegram():
+    return telegram_health_check()

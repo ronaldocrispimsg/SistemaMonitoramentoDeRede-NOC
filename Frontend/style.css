@@ -322,3 +322,40 @@ input[type=number]{
     -moz-appearance:textfield;
     appearance:textfield;
 }
+
+.heatmap-box{
+    margin-top: 12px;
+    padding: 10px;
+    background: #f8fafc;
+    border: 1px solid #dbe2ea;
+    border-radius: 8px;
+}
+
+.heatmap-grid{
+    display: grid;
+    grid-template-columns: repeat(10, 18px);
+    gap: 4px;
+    margin-top: 10px;
+}
+
+.heat-cell{
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+}
+
+.heat-low{
+    background: #22c55e;
+}
+
+.heat-medium{
+    background: #facc15;
+}
+
+.heat-high{
+    background: #f97316;
+}
+
+.heat-fail{
+    background: #ef4444;
+}

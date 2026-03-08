@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from Backend.models import CheckResult, Incident
+from Backend.utils import send_telegram_alert
 
 def compute_health(ping_result, tcp_result, http_result):
-
     score = 0
 
     # ---------- Ping ----------
@@ -10,7 +10,6 @@ def compute_health(ping_result, tcp_result, http_result):
         score += 30
 
         lat = ping_result.get("latency") or 9999
-
         if lat < 100:
             score += 15
         elif lat < 300:
@@ -25,36 +24,32 @@ def compute_health(ping_result, tcp_result, http_result):
 
     # ---------- HTTP ----------
     if http_result:
-
         status_code = http_result.get("status_code")
 
-        # HTTP OK
         if http_result["success"]:
             score += 25
 
             if http_result.get("latency") and http_result["latency"] < 500:
                 score += 10
 
-        # HTTP 500 = aplicação quebrada
         elif status_code and 500 <= status_code < 600:
             score -= 20
 
-        # HTTP 400 = erro cliente
         elif status_code and 400 <= status_code < 500:
             score -= 10
 
-        # score maximo e minimo
-        score = max(0, min(100, score))
+    # score máximo e mínimo
+    score = max(0, min(100, score))
 
-        # ---------- Severidade ----------
-        if score >= 85:
-            severity = "HEALTHY"
-        elif score >= 65:
-            severity = "WARNING"
-        elif score >= 40:
-            severity = "DEGRADED"
-        else:
-            severity = "CRITICAL"
+    # ---------- Severidade ----------
+    if score >= 85:
+        severity = "HEALTHY"
+    elif score >= 65:
+        severity = "WARNING"
+    elif score >= 40:
+        severity = "DEGRADED"
+    else:
+        severity = "CRITICAL"
 
     return score, severity
 
@@ -364,3 +359,99 @@ def availability_last_10_min(db, host_name):
     availability = ((total_period - downtime) / total_period) * 100
 
     return round(max(0, availability), 4)
+
+def apply_preventive_logic(host, snmp_data=None):
+    reasons = []
+    preventive_severity = "HEALTHY"
+
+    # Se já caiu, não é preventivo: é crítico operacional
+    if host.status == "DOWN":
+        return "CRITICAL", ["Host indisponível"]
+
+    if host.status == "DEGRADED":
+        preventive_severity = "DEGRADED"
+        reasons.append("Serviço degradado")
+
+    # ---------- SLA ----------
+    sla_values = [
+        host.sla_rolling_ping,
+        host.sla_rolling_tcp,
+        host.sla_rolling_http
+    ]
+
+    valid_slas = [v for v in sla_values if v is not None]
+
+    if any(v < 95 for v in valid_slas):
+        preventive_severity = max_severity(preventive_severity, "WARNING")
+        reasons.append("Queda de taxa de sucesso")
+
+    if any(v < 85 for v in valid_slas):
+        preventive_severity = max_severity(preventive_severity, "DEGRADED")
+        reasons.append("SLA instável")
+
+    # ---------- Jitter ----------
+    jitter_values = [
+        host.jitter_ms_ping,
+        host.jitter_ms_tcp,
+        host.jitter_ms_http
+    ]
+
+    valid_jitters = [v for v in jitter_values if v is not None]
+
+    if any(v > 80 for v in valid_jitters):
+        preventive_severity = max_severity(preventive_severity, "WARNING")
+        reasons.append("Alta variação de latência")
+
+    if any(v > 150 for v in valid_jitters):
+        preventive_severity = max_severity(preventive_severity, "DEGRADED")
+        reasons.append("Jitter crítico")
+
+    # ---------- Tendência ----------
+    if host.trend in ("SUBINDO", "PIORANDO", "UPWARD"):
+        preventive_severity = max_severity(preventive_severity, "WARNING")
+        reasons.append("Tendência de piora no ping")
+
+    if host.trend_http in ("SUBINDO", "PIORANDO", "UPWARD"):
+        preventive_severity = max_severity(preventive_severity, "WARNING")
+        reasons.append("Tendência de piora no HTTP")
+
+    # ---------- SNMP ----------
+    if snmp_data:
+        cpu = snmp_data.get("cpu")
+        ram = snmp_data.get("ram")
+        disk = snmp_data.get("disk")
+
+        if cpu is not None and cpu >= 85:
+            preventive_severity = max_severity(preventive_severity, "WARNING")
+            reasons.append(f"CPU alta ({cpu}%)")
+
+        if cpu is not None and cpu >= 95:
+            preventive_severity = max_severity(preventive_severity, "CRITICAL")
+            reasons.append(f"CPU crítica ({cpu}%)")
+
+        if ram is not None and ram >= 85:
+            preventive_severity = max_severity(preventive_severity, "WARNING")
+            reasons.append(f"RAM alta ({ram}%)")
+
+        if ram is not None and ram >= 95:
+            preventive_severity = max_severity(preventive_severity, "CRITICAL")
+            reasons.append(f"RAM crítica ({ram}%)")
+
+        if disk is not None and disk >= 90:
+            preventive_severity = max_severity(preventive_severity, "WARNING")
+            reasons.append(f"Disco alto ({disk}%)")
+
+        if disk is not None and disk >= 97:
+            preventive_severity = max_severity(preventive_severity, "CRITICAL")
+            reasons.append(f"Disco crítico ({disk}%)")
+
+    return preventive_severity, reasons
+
+def max_severity(current, new):
+    order = {
+        "HEALTHY": 0,
+        "WARNING": 1,
+        "DEGRADED": 2,
+        "CRITICAL": 3
+    }
+    return new if order[new] > order[current] else current
