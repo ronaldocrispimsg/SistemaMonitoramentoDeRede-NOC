@@ -1,5 +1,9 @@
 const API = "http://127.0.0.1:8000";
 const charts = {};
+const HEATMAP_WINDOW_MINUTES = 10;
+const HEATMAP_COLUMNS = 20;
+const HEATMAP_ROWS = 10;
+const HEATMAP_TOTAL_CELLS = HEATMAP_COLUMNS * HEATMAP_ROWS;
 
 if (Notification.permission !== "granted") {
     Notification.requestPermission();
@@ -1037,32 +1041,134 @@ async function loadSnmpChart(name) {
 function renderHeatmap(container, payload, hostName) {
     const rows = Array.isArray(payload) ? payload : (payload?.data || []);
     const checkType = Array.isArray(payload) ? "auto" : (payload?.check_type || "auto");
+    const totalCells = HEATMAP_TOTAL_CELLS;
+    const columns = HEATMAP_COLUMNS;
+    const rowsCount = HEATMAP_ROWS;
+    const timeWindowMs = HEATMAP_WINDOW_MINUTES * 60 * 1000;
 
     if (!rows.length) {
         container.innerHTML = "<p>Sem dados para heatmap.</p>";
         return;
     }
 
-    let html = `<h4>Heatmap de Latência - ${hostName} (${String(checkType).toUpperCase()})</h4>`;
-    html += `<div class="heatmap-grid">`;
+    const rowsWithTs = rows
+        .map((item) => ({
+            ...item,
+            ts: Date.parse(item.timestamp)
+        }))
+        .filter((item) => !Number.isNaN(item.ts))
+        .sort((a, b) => a.ts - b.ts);
 
-    for (const item of rows.slice(-100)) {
-        let cls = "heat-low";
-        const latency = item.latency ?? 0;
-
-        if (!item.success) {
-            cls = "heat-fail";
-        } else if (latency > 300) {
-            cls = "heat-high";
-        } else if (latency > 100) {
-            cls = "heat-medium";
-        }
-
-        const title = `${checkType} | Latência: ${item.latency ?? "N/A"} ms | ${item.timestamp}`;
-        html += `<div class="heat-cell ${cls}" title="${title}"></div>`;
+    if (!rowsWithTs.length) {
+        container.innerHTML = "<p>Sem dados válidos de timestamp para heatmap.</p>";
+        return;
     }
 
-    html += `</div>`;
+    const latestTs = rowsWithTs[rowsWithTs.length - 1].ts;
+    const periodEnd = Math.max(Date.now(), latestTs);
+    const periodStart = periodEnd - timeWindowMs;
+    const windowRows = rowsWithTs.filter((item) => item.ts >= periodStart && item.ts <= periodEnd);
+    const compactRows = windowRows.slice(-totalCells);
+    const buckets = new Array(totalCells).fill(null);
+    const startOffset = totalCells - compactRows.length;
+
+    compactRows.forEach((item, idx) => {
+        buckets[startOffset + idx] = item;
+    });
+
+    const filled = buckets.filter(Boolean);
+    let ok = 0;
+    let warn = 0;
+    let high = 0;
+    let fail = 0;
+    let noData = 0;
+
+    for (const item of buckets) {
+        if (!item) {
+            noData += 1;
+            continue;
+        }
+        const latency = item.latency ?? 0;
+        if (!item.success) {
+            fail += 1;
+        } else if (latency > 300) {
+            high += 1;
+        } else if (latency > 100) {
+            warn += 1;
+        } else {
+            ok += 1;
+        }
+    }
+
+    const oldestIdx = buckets.findIndex(Boolean);
+    const newestIdx = buckets.length - 1 - [...buckets].reverse().findIndex(Boolean);
+
+    const formatDateTime = (ts) =>
+        new Date(ts).toLocaleString("pt-BR", {
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+
+    const oldestTs = filled.length ? formatDateTime(filled[0].ts) : "N/A";
+    const newestTs = filled.length ? formatDateTime(filled[filled.length - 1].ts) : "N/A";
+
+    let html = `
+        <div class="heatmap-header">
+            <h4>Heatmap de Latência - ${hostName} (${String(checkType).toUpperCase()})</h4>
+            <small>${HEATMAP_WINDOW_MINUTES} min | ${columns}x${rowsCount} (${totalCells} checks)</small>
+        </div>
+        <div class="heatmap-stats">
+            <span class="heat-stat stat-low">Baixa: ${ok}</span>
+            <span class="heat-stat stat-medium">Média: ${warn}</span>
+            <span class="heat-stat stat-high">Alta: ${high}</span>
+            <span class="heat-stat stat-fail">Falha: ${fail}</span>
+            <span class="heat-stat stat-none">Sem dado: ${noData}</span>
+        </div>
+        <div class="heatmap-time-axis">
+            <small>Check mais velho: ${oldestTs}</small>
+            <small>Check mais novo: ${newestTs}</small>
+        </div>
+        <div class="heatmap-grid-wrap">
+            <div class="heatmap-grid">
+    `;
+
+    for (let idx = 0; idx < buckets.length; idx += 1) {
+        const item = buckets[idx];
+        let cls = "heat-none";
+        let title = "Sem check nessa faixa de tempo";
+
+        if (item) {
+            const latency = item.latency ?? 0;
+            if (!item.success) {
+                cls = "heat-fail";
+            } else if (latency > 300) {
+                cls = "heat-high";
+            } else if (latency > 100) {
+                cls = "heat-medium";
+            } else {
+                cls = "heat-low";
+            }
+            title = `${checkType} | Latência: ${item.latency ?? "N/A"} ms | ${item.timestamp}`;
+        }
+
+        const oldestClass = idx === oldestIdx ? "is-oldest" : "";
+        const newestClass = idx === newestIdx ? "is-newest" : "";
+        html += `<div class="heat-cell ${cls} ${oldestClass} ${newestClass}" title="${title}"></div>`;
+    }
+
+    html += `</div></div>
+        <div class="heatmap-legend">
+            <span title="Latência até 100 ms e check com sucesso"><i class="legend-dot heat-low"></i> Bom</span>
+            <span title="Latência entre 101 e 300 ms e check com sucesso"><i class="legend-dot heat-medium"></i> Atenção</span>
+            <span title="Latência acima de 300 ms e check com sucesso"><i class="legend-dot heat-high"></i> Ruim</span>
+            <span title="Check sem sucesso (falha de monitoramento)"><i class="legend-dot heat-fail"></i> Falha</span>
+            <span title="Sem checks nessa faixa de tempo"><i class="legend-dot heat-none"></i> Sem dado</span>
+            <span title="Borda clara = check mais velho no período"><i class="legend-dot legend-oldest"></i> Mais velho</span>
+            <span title="Borda escura = check mais novo no período"><i class="legend-dot legend-newest"></i> Mais novo</span>
+        </div>
+    `;
     container.innerHTML = html;
 }
 

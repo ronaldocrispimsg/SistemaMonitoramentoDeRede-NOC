@@ -696,23 +696,92 @@ input[type=number]{
 
 .heatmap-box{
     margin-top: 12px;
-    padding: 10px;
-    background: #f8fafc;
+    padding: 14px;
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     border: 1px solid #dbe2ea;
-    border-radius: 8px;
+    border-radius: 12px;
 }
 
 .heatmap-grid{
     display: grid;
-    grid-template-columns: repeat(10, 18px);
-    gap: 4px;
-    margin-top: 10px;
+    grid-template-columns: repeat(20, minmax(0, 1fr));
+    grid-template-rows: repeat(10, minmax(0, 1fr));
+    gap: 1px;
+    margin-top: 12px;
 }
 
 .heat-cell{
-    width: 18px;
-    height: 18px;
-    border-radius: 3px;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    min-height: 16px;
+    border-radius: 0;
+    border: none;
+}
+
+.heatmap-grid-wrap{
+    margin-top:12px;
+    overflow-x:auto;
+}
+
+.heatmap-grid{
+    min-width:560px;
+}
+
+.heatmap-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+}
+
+.heatmap-header h4{
+    margin:0;
+    font-size:0.95rem;
+}
+
+.heatmap-header small{
+    color:#64748b;
+}
+
+.heatmap-stats{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:10px;
+}
+
+.heat-stat{
+    font-size:0.78rem;
+    font-weight:600;
+    border-radius:999px;
+    padding:4px 10px;
+    border:1px solid #d1d5db;
+    background:#fff;
+    color:#334155;
+}
+
+.stat-low{ border-color:#86efac; }
+.stat-medium{ border-color:#fde68a; }
+.stat-high{ border-color:#fdba74; }
+.stat-fail{ border-color:#fca5a5; }
+.stat-none{ border-color:#cbd5e1; }
+
+.heatmap-legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px 14px;
+    margin-top:12px;
+    font-size:0.78rem;
+    color:#475569;
+}
+
+.legend-dot{
+    display:inline-block;
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    margin-right:6px;
+    vertical-align:middle;
 }
 
 .heat-low{
@@ -729,6 +798,37 @@ input[type=number]{
 
 .heat-fail{
     background: #ef4444;
+}
+
+.heat-none{
+    background:#e5e7eb;
+}
+
+.heat-cell.is-oldest{
+    box-shadow: inset 0 0 0 2px #f8fafc;
+}
+
+.heat-cell.is-newest{
+    box-shadow: inset 0 0 0 2px #0f172a;
+}
+
+.heatmap-time-axis{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    margin-top:10px;
+    font-size:0.78rem;
+    color:#475569;
+}
+
+.legend-oldest{
+    border:2px solid #f8fafc;
+    background:#64748b;
+}
+
+.legend-newest{
+    border:2px solid #0f172a;
+    background:#64748b;
 }
 
 .metric-ok{
