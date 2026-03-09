@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 from Backend.models import CheckResult, Incident
-from Backend.utils import send_telegram_alert
 
 def compute_health(ping_result, tcp_result, http_result):
     score = 0

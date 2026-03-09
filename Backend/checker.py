@@ -4,7 +4,6 @@ import socket
 import json
 import re
 import requests
-import httpx
 import dns.resolver
 from datetime import datetime, timedelta
 from Backend.models import DNSCache
@@ -87,10 +86,7 @@ def resolve_dns_cached(address: str, db):
 
     return ips, ttl, ttl
 
-
 import platform
-import subprocess
-import re
 
 def ping_host(ip: str, count: int = 3, timeout: int = 5, max_ms=5000):
     is_windows = platform.system().lower() == "windows"

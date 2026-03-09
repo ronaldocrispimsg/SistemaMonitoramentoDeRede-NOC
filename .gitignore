@@ -34,6 +34,7 @@ Thumbs.db
 # ===== Env files =====
 .env
 .env.*
+!.env.example
 
 # ===== UV / Poetry / Lock files (se não quiser versionar) =====
 uv.lock
@@ -43,6 +44,3 @@ poetry.lock
 .cache/
 .pytest_cache/
 .mypy_cache/
-
-# ===== Outros =====
-notifications.py

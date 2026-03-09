@@ -1,14 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from Backend.database import SessionLocal, get_db
+from Backend.database import get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User, SNMPMetric
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
 from Backend.notifications import telegram_health_check
-from Backend.schemas import HostCreate, HostUpdate
+from Backend.schemas import HostCreate, HostUpdate, LoginRequest, PasswordChangeRequest
 from Backend.utils import is_ip, normalize_http_url, reverse_dns
-from fastapi.security import OAuth2PasswordRequestForm
 from Backend.dependencies import get_current_user
 from Backend.security import verify_password, create_access_token, hash_password
 
@@ -18,6 +17,15 @@ def _resolve_http_url(address: str, http_url: str | None, port: int | None) -> s
     clean_http = (http_url or "").strip()
     base = clean_http if clean_http else address
     return normalize_http_url(base, port) if base else None
+
+def _extract_ips_from_dns_result(dns_result) -> list[str]:
+    if isinstance(dns_result, tuple):
+        if dns_result and isinstance(dns_result[0], list):
+            return dns_result[0]
+        return []
+    if isinstance(dns_result, list):
+        return dns_result
+    return []
 
 def _last_check(db: Session, host_id: int, check_type: str) -> CheckResult | None:
     return (
@@ -77,7 +85,8 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
     if is_ip(data.address):
         resolved = reverse_dns(data.address)
     else:
-        ips = resolve_dns_cached(data.address, db)  # Verifica se o endereço é válido       
+        dns_result = resolve_dns_cached(data.address, db)  # Verifica se o endereço é válido
+        ips = _extract_ips_from_dns_result(dns_result)
         
         if not ips:
             raise HTTPException(status_code=400, detail="Endereço inválido")
@@ -139,14 +148,15 @@ def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_us
 
 
 @router.post("/host/check/{host_name}")
-def check_host(host_name: str, db: Session = Depends(get_db)):
+def check_host(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
 
     host = db.query(Host).filter(Host.name == host_name).first()
 
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
 
-    ips = resolve_dns_cached(host.address, db)
+    dns_result = resolve_dns_cached(host.address, db)
+    ips = _extract_ips_from_dns_result(dns_result)
 
     if not ips:
         raise HTTPException(400, "DNS fail")
@@ -198,7 +208,7 @@ def check_host(host_name: str, db: Session = Depends(get_db)):
 }
 
 @router.get("/host/history/{host_name}")
-def host_history(host_name: str, db: Session = Depends(get_db)):
+def host_history(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     host = db.query(Host).filter(Host.name == host_name).first()
 
     if not host:
@@ -252,7 +262,8 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
     if is_ip(data.address):
         resolved = reverse_dns(data.address)
     else:
-        ips = resolve_dns_cached(data.address, db)
+        dns_result = resolve_dns_cached(data.address, db)
+        ips = _extract_ips_from_dns_result(dns_result)
 
         if not ips:
             raise HTTPException(status_code=400, detail="Endereço inválido. ")
@@ -320,7 +331,7 @@ def list_alerts(db: Session = Depends(get_db), user: str = Depends(get_current_u
     return result
 
 @router.get("/hosts/metrics/{host_name}")
-def host_metrics(host_name: str, db: Session = Depends(get_db)):
+def host_metrics(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return {
         "total_incidents": total_incidents(db, host_name),
         "total_downtime_seconds": total_downtime(db, host_name),
@@ -328,7 +339,7 @@ def host_metrics(host_name: str, db: Session = Depends(get_db)):
     }
 
 @router.get("/hosts/metrics/availability/type/{host_name}")
-def availability_type(host_name: str, db: Session = Depends(get_db)):
+def availability_type(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
 
     host = db.query(Host).filter_by(name=host_name).first()
     if not host:
@@ -376,7 +387,7 @@ def availability_type(host_name: str, db: Session = Depends(get_db)):
     }
     
 @router.get("/hosts/metrics/availability/host/{host_name}")
-def availability_host(host_name: str, db: Session = Depends(get_db)):
+def availability_host(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = datetime.utcnow()
     points = []
 
@@ -414,7 +425,7 @@ def availability_host(host_name: str, db: Session = Depends(get_db)):
     return list(reversed(points))
 
 @router.get("/hosts/metrics/{host_name}/downtime")
-def downtime_history(host_name: str, db: Session = Depends(get_db)):
+def downtime_history(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = datetime.utcnow()
     since = now - timedelta(hours=1)
 
@@ -437,11 +448,35 @@ def downtime_history(host_name: str, db: Session = Depends(get_db)):
     ]
 
 @router.post("/auth/login")
-def login(data: dict, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == data["username"]).first()
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    username = data.username.strip()
+    password = data.password
+    user = db.query(User).filter(User.username == username).first()
 
-    if not user or not verify_password(data["password"], user.password_hash):
+    if user and user.locked:
+        if user.locked_until and user.locked_until <= datetime.utcnow():
+            user.locked = False
+            user.locked_until = None
+            user.attempts = 0
+            db.commit()
+        else:
+            raise HTTPException(status_code=403, detail="Conta bloqueada. Tente novamente mais tarde.")
+
+    if not user or not verify_password(password, user.password_hash):
+        if user:
+            user.attempts = (user.attempts or 0) + 1
+            if user.attempts >= 5:
+                user.locked = True
+                user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+                db.commit()
+                raise HTTPException(status_code=403, detail="Conta bloqueada após 5 tentativas. Aguarde 15 minutos.")
+            db.commit()
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    user.attempts = 0
+    user.locked = False
+    user.locked_until = None
+    db.commit()
 
     # Aqui geramos o token JWT
     token = create_access_token({"sub": user.username})
@@ -453,12 +488,12 @@ def login(data: dict, db: Session = Depends(get_db)):
     }
 
 @router.post("/auth/first-password")
-def first_change_password(data: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def first_change_password(data: PasswordChangeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
 
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-    user.password_hash = hash_password(data["new_password"])
+    user.password_hash = hash_password(data.new_password)
     user.must_change_password = False
     user.attempts = 0
 
@@ -469,7 +504,7 @@ def first_change_password(data: dict, user: User = Depends(get_current_user), db
     }
 
 @router.post("/auth/change-password")
-def change_password(data: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def change_password(data: PasswordChangeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
 
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -479,7 +514,10 @@ def change_password(data: dict, user: User = Depends(get_current_user), db: Sess
         raise HTTPException(status_code=403, detail="Conta bloqueada por muitas tentativas")
 
     # Verifica senha atual
-    if not verify_password(data["current_password"], user.password_hash):
+    if not data.current_password:
+        raise HTTPException(status_code=400, detail="Senha atual é obrigatória")
+
+    if not verify_password(data.current_password, user.password_hash):
 
         user.attempts += 1
 
@@ -497,7 +535,7 @@ def change_password(data: dict, user: User = Depends(get_current_user), db: Sess
 
     # Senha correta → reseta tentativas
     user.attempts = 0
-    user.password_hash = hash_password(data["new_password"])
+    user.password_hash = hash_password(data.new_password)
     user.must_change_password = False
 
     db.commit()
@@ -527,7 +565,7 @@ def get_latest_incidents(db: Session = Depends(get_db), user: str = Depends(get_
     ]
 
 @router.get("/metrics/heatmap/{host_id}")
-def get_heatmap(host_id: int, db: Session = Depends(get_db)):
+def get_heatmap(host_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     host = db.query(Host).filter(Host.id == host_id).first()
 
     if not host:
@@ -676,5 +714,5 @@ def dashboard_summary(db: Session = Depends(get_db), user: str = Depends(get_cur
     }
 
 @router.get("/health/telegram")
-def check_telegram():
+def check_telegram(user: User = Depends(get_current_user)):
     return telegram_health_check()

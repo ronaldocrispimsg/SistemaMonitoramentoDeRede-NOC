@@ -49,16 +49,19 @@ def get_snmp_value(ip, community, oid):
 async def walk_snmp(ip, community, oid):
     snmp_engine = SnmpEngine()
     results = []
+    current_oid = oid
 
     try:
-        async for error_indication, error_status, error_index, var_binds in next_cmd(
-            snmp_engine,
-            CommunityData(community, mpModel=1),
-            await UdpTransportTarget.create((ip, 161), timeout=1, retries=0),
-            ContextData(),
-            ObjectType(ObjectIdentity(oid)),
-            lexicographicMode=False,
-        ):
+        while True:
+            error_indication, error_status, error_index, var_binds = await next_cmd(
+                snmp_engine,
+                CommunityData(community, mpModel=1),
+                await UdpTransportTarget.create((ip, 161), timeout=1, retries=0),
+                ContextData(),
+                ObjectType(ObjectIdentity(current_oid)),
+                lexicographicMode=False,
+            )
+
             if error_indication:
                 print(f"Erro SNMP walk em {ip}: {error_indication}")
                 return []
@@ -70,8 +73,23 @@ async def walk_snmp(ip, community, oid):
                 )
                 return []
 
+            if not var_binds:
+                break
+
+            reached_end = False
             for var_bind in var_binds:
-                results.append((str(var_bind[0]), str(var_bind[1])))
+                oid_name = str(var_bind[0])
+                oid_value = str(var_bind[1])
+
+                if not oid_name.startswith(f"{oid}."):
+                    reached_end = True
+                    break
+
+                results.append((oid_name, oid_value))
+                current_oid = oid_name
+
+            if reached_end:
+                break
     finally:
         snmp_engine.close_dispatcher()
 
