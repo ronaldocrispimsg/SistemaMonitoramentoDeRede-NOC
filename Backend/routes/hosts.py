@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from Backend.database import SessionLocal, get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
-from Backend.models import CheckResult, Host, Alert, Incident, User
+from Backend.models import CheckResult, Host, Alert, Incident, User, SNMPMetric
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
 from Backend.notifications import telegram_health_check
 from Backend.schemas import HostCreate, HostUpdate
@@ -18,6 +18,56 @@ def _resolve_http_url(address: str, http_url: str | None, port: int | None) -> s
     clean_http = (http_url or "").strip()
     base = clean_http if clean_http else address
     return normalize_http_url(base, port) if base else None
+
+def _last_check(db: Session, host_id: int, check_type: str) -> CheckResult | None:
+    return (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == check_type
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .first()
+    )
+
+def infer_probable_cause(db: Session, host: Host) -> str:
+    last_dns = _last_check(db, host.id, "dns")
+    last_ping = _last_check(db, host.id, "ping")
+    last_tcp = _last_check(db, host.id, "tcp")
+    last_http = _last_check(db, host.id, "http")
+
+    if host.status == "DOWN":
+        if last_dns and not last_dns.success:
+            return "Falha na resolução DNS"
+        if last_http and not last_http.success and (last_http.status_code or 0) >= 500:
+            return f"Serviço HTTP instável (HTTP {last_http.status_code})"
+        if host.port is not None and last_tcp and not last_tcp.success:
+            return "Porta TCP indisponível"
+        if last_ping and not last_ping.success:
+            return "Host sem resposta ICMP"
+        return "Indisponibilidade geral do host"
+
+    if (
+        (host.cpu_usage is not None and host.cpu_usage >= 95) or
+        (host.ram_usage is not None and host.ram_usage >= 92) or
+        (host.disk_usage is not None and host.disk_usage >= 95)
+    ):
+        return "Sobrecarga de recursos locais (CPU/RAM/Disco)"
+
+    if last_http and not last_http.success and (last_http.status_code or 0) >= 500:
+        return f"Aplicação web com erro HTTP {last_http.status_code}"
+
+    if (
+        (host.jitter_ms_ping is not None and host.jitter_ms_ping >= 120) or
+        (host.jitter_ms_http is not None and host.jitter_ms_http >= 180) or
+        (host.sla_rolling_ping is not None and host.sla_rolling_ping < 95)
+    ):
+        return "Instabilidade de rede (jitter/perda)"
+
+    if host.severity in ("WARNING", "DEGRADED", "CRITICAL"):
+        return "Degradação detectada por métricas preventivas"
+
+    return "Operação normal"
 
 @router.post("/host/create")
 def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
@@ -83,6 +133,7 @@ def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_us
     # Métricas em tempo real no objeto antes de enviar
     for h in hosts:
         h.availability_10m = availability_last_10_min(db, h.name)
+        h.probable_cause = infer_probable_cause(db, h)
         
     return hosts
 
@@ -509,7 +560,94 @@ def get_heatmap(host_id: int, db: Session = Depends(get_db)):
             "error": r.error
         })
 
-    return data
+    return {
+        "host_id": host.id,
+        "host": host.name,
+        "check_type": preferred_type,
+        "data": data
+    }
+
+@router.get("/metrics/snmp/{host_name}")
+def get_snmp_history(host_name: str, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
+    host = db.query(Host).filter(Host.name == host_name, Host.active == True).first()
+
+    if not host:
+        raise HTTPException(status_code=404, detail="Host não encontrado")
+
+    rows = (
+        db.query(SNMPMetric)
+        .filter(SNMPMetric.host_id == host.id)
+        .order_by(SNMPMetric.timestamp.desc())
+        .limit(180)
+        .all()
+    )
+    rows.reverse()
+
+    return {
+        "host": host.name,
+        "points": [
+            {
+                "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+                "cpu": r.cpu,
+                "ram": r.ram,
+                "disk": r.disk,
+                "network_in_bps": r.network_in_bps,
+                "network_out_bps": r.network_out_bps,
+                "network_total_bps": r.network_total_bps
+            }
+            for r in rows
+        ]
+    }
+
+@router.get("/dashboard/summary")
+def dashboard_summary(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
+    hosts = db.query(Host).filter(Host.active == True).all()
+
+    total_hosts = len(hosts)
+    up = sum(1 for h in hosts if h.status == "UP")
+    degraded = sum(1 for h in hosts if h.status == "DEGRADED")
+    down = sum(1 for h in hosts if h.status == "DOWN")
+    critical = sum(1 for h in hosts if h.severity == "CRITICAL")
+
+    open_incidents = (
+        db.query(Incident)
+        .filter(Incident.status == "OPEN")
+        .count()
+    )
+
+    health_values = [h.health_score for h in hosts if h.health_score is not None]
+    avg_health = round(sum(health_values) / len(health_values), 2) if health_values else None
+
+    worst_latency_host = None
+    latency_hosts = [h for h in hosts if h.latency_ping is not None]
+    if latency_hosts:
+        worst = max(latency_hosts, key=lambda h: h.latency_ping or 0)
+        worst_latency_host = {"host": worst.name, "value_ms": round(worst.latency_ping, 2)}
+
+    top_cpu_host = None
+    cpu_hosts = [h for h in hosts if h.cpu_usage is not None]
+    if cpu_hosts:
+        top_cpu = max(cpu_hosts, key=lambda h: h.cpu_usage or 0)
+        top_cpu_host = {"host": top_cpu.name, "value": round(top_cpu.cpu_usage, 2)}
+
+    top_ram_host = None
+    ram_hosts = [h for h in hosts if h.ram_usage is not None]
+    if ram_hosts:
+        top_ram = max(ram_hosts, key=lambda h: h.ram_usage or 0)
+        top_ram_host = {"host": top_ram.name, "value": round(top_ram.ram_usage, 2)}
+
+    return {
+        "total_hosts": total_hosts,
+        "up": up,
+        "degraded": degraded,
+        "down": down,
+        "critical_hosts": critical,
+        "open_incidents": open_incidents,
+        "average_health": avg_health,
+        "worst_latency_host": worst_latency_host,
+        "top_cpu_host": top_cpu_host,
+        "top_ram_host": top_ram_host
+    }
 
 @router.get("/health/telegram")
 def check_telegram():
