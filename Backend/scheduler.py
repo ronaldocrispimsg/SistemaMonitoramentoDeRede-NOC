@@ -14,6 +14,66 @@ scheduler = BackgroundScheduler()
 
 ALERT_FAIL_THRESHOLD = 2
 ALERT_RECOVER_THRESHOLD = 1
+SNMP_BURST_FAIL_LIMIT = 3
+SNMP_BACKOFF_BASE_SECONDS = 300
+SNMP_BACKOFF_MAX_SECONDS = 3600
+SNMP_BACKOFF_STATE = {}
+
+
+def _snmp_has_usable_data(snmp_data):
+    if not isinstance(snmp_data, dict):
+        return False
+
+    if any(snmp_data.get(key) is not None for key in ("cpu", "ram", "disk")):
+        return True
+
+    network = snmp_data.get("network")
+    if isinstance(network, dict):
+        return any(network.get(k) is not None for k in ("in_octets", "out_octets", "in_bps", "out_bps"))
+
+    return False
+
+
+def _get_snmp_state(host_id):
+    if host_id not in SNMP_BACKOFF_STATE:
+        SNMP_BACKOFF_STATE[host_id] = {
+            "failures_in_burst": 0,
+            "backoff_level": 0,
+            "pause_until": None,
+        }
+    return SNMP_BACKOFF_STATE[host_id]
+
+
+def _can_attempt_snmp(host_id):
+    state = _get_snmp_state(host_id)
+    pause_until = state["pause_until"]
+    if pause_until and datetime.utcnow() < pause_until:
+        return False
+    return True
+
+
+def _register_snmp_success(host_id):
+    state = _get_snmp_state(host_id)
+    state["failures_in_burst"] = 0
+    state["backoff_level"] = 0
+    state["pause_until"] = None
+
+
+def _register_snmp_failure(host_id, host_name):
+    state = _get_snmp_state(host_id)
+    state["failures_in_burst"] += 1
+
+    if state["failures_in_burst"] < SNMP_BURST_FAIL_LIMIT:
+        return
+
+    level = max(state["backoff_level"], 0)
+    wait_seconds = min(SNMP_BACKOFF_BASE_SECONDS * (2 ** level), SNMP_BACKOFF_MAX_SECONDS)
+    state["pause_until"] = datetime.utcnow() + timedelta(seconds=wait_seconds)
+    state["failures_in_burst"] = 0
+
+    state["backoff_level"] += 1
+
+    print(f"[SNMP BACKOFF] {host_name}: pausado por {wait_seconds}s")
 
 def check_all_hosts():
 
@@ -297,10 +357,17 @@ def check_all_hosts():
                 snmp_data = None
 
                 if host.status == "UP":
-                    try:
-                        snmp_data = update_host_snmp(host, db)
-                    except Exception as e:
-                        print(f"[SNMP ERROR] {host.name}: {e}")
+                    if _can_attempt_snmp(host.id):
+                        try:
+                            snmp_data = update_host_snmp(host, db)
+                        except Exception as e:
+                            print(f"[SNMP ERROR] {host.name}: {e}")
+                            _register_snmp_failure(host.id, host.name)
+                        else:
+                            if _snmp_has_usable_data(snmp_data):
+                                _register_snmp_success(host.id)
+                            else:
+                                _register_snmp_failure(host.id, host.name)
 
                 preventive_severity, preventive_reasons = apply_preventive_logic(host, snmp_data)
 

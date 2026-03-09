@@ -207,6 +207,26 @@ async function loadHosts() {
     if (!div) return;
 
     try {
+        const openStateByHost = {};
+        const openHeatmapIds = new Set();
+        div.querySelectorAll(".card").forEach((card) => {
+            const id = card.id || "";
+            if (!id.startsWith("card-")) return;
+            const hostName = id.slice(5);
+            openStateByHost[hostName] = {
+                historyOpen: !document.getElementById(`history-${hostName}`)?.classList.contains("hidden"),
+                latencyOpen: !document.getElementById(`chart-container-${hostName}`)?.classList.contains("hidden"),
+                snmpOpen: !document.getElementById(`snmp-chart-box-${hostName}`)?.classList.contains("hidden"),
+                availabilityTypeOpen: !document.getElementById(`availability-chart-type-box-${hostName}`)?.classList.contains("hidden"),
+                availabilityOpen: !document.getElementById(`availability-chart-box-${hostName}`)?.classList.contains("hidden")
+            };
+        });
+        div.querySelectorAll(".heatmap-box").forEach((box) => {
+            if (box.hidden === false) {
+                openHeatmapIds.add(String(box.id).replace("heatmap-", ""));
+            }
+        });
+
         const res = await fetchWithAuth(`${API}/hosts/list`);
         if (!res) {
             div.innerHTML = "<p style='color:orange'>⚠ Não foi possível carregar os hosts.</p>";
@@ -216,7 +236,7 @@ async function loadHosts() {
         const hosts = await res.json();
         div.innerHTML = "";
 
-        hosts.forEach(h => {
+        for (const h of hosts) {
             const card = document.createElement("div");
             card.className = "card";
             card.id = `card-${h.name}`;
@@ -239,41 +259,101 @@ async function loadHosts() {
             const availability10m = h.availability_10m != null
                 ? h.availability_10m.toFixed(2)
                 : "N/A";
-
-            card.innerHTML = `
-                <div class="card-header">
-                    <div class="host-main-info">
-                        <strong class="host-title">${h.name}</strong>
-                        <span class="status-indicator ${statusColor}"></span>
-                        <small class="host-addr">(${h.address}${h.port ? ':' + h.port : ''})</small>
-                        <br><small>Saúde: ${h.health_score ?? "N/A"}% <span class="severity-indicator ${sevClass}">✚</span></small>
-                        <br><small>Disponibilidade: ${availability10m}%</small>
-                        <br><small>Último check: ${formatCheckTime(h.last_check)}</small>
-                        <br><small>Último SNMP: ${formatCheckTime(h.last_snmp_check)}</small>
-
-                        <div class="metrics-section">
-                            <div class="metrics-title">Rede</div>
-                            <small>Taxa de sucesso (ping): ${h.sla_rolling_ping ?? "N/A"}%</small><br>
-                            <small>Taxa de sucesso (tcp): ${h.sla_rolling_tcp ?? "N/A"}%</small><br>
-                            <small>Taxa de sucesso (http): ${h.sla_rolling_http ?? "N/A"}%</small><br>
-                            <small>Variação na latência (ping): ${h.jitter_ms_ping ?? "N/A"} ms</small><br>
-                            <small>Variação na latência (tcp): ${h.jitter_ms_tcp ?? "N/A"} ms</small><br>
-                            <small>Variação na latência (http): ${h.jitter_ms_http ?? "N/A"} ms</small><br>
-                            <small>Tendência HTTP: ${trendIcon(h.trend_http)} ${h.trend_http ?? "N/A"}</small><br>
-                            <small><b>Causa provável:</b> ${h.probable_cause ?? "Operação normal"}</small>
-                        </div>
-
+            const snmpConfigured = [
+                h.cpu_usage,
+                h.ram_usage,
+                h.disk_usage,
+                h.network_traffic,
+                h.network_in_bps,
+                h.network_out_bps
+            ].some((value) => value !== null && value !== undefined);
+            const snmpStatusHtml = !snmpConfigured
+                ? `<small class="snmp-tag snmp-tag-off">SNMP: não configurado</small>`
+                : "";
+            const snmpSectionHtml = snmpConfigured ? `
                         <div class="metrics-section snmp-section">
                             <div class="metrics-title">SNMP</div>
                             <div class="snmp-grid">
-                                <div><small class="${metricClass(h.cpu_usage)}">CPU: ${h.cpu_usage ?? "N/A"}%</small></div>
-                                <div><small class="${metricClass(h.ram_usage)}">RAM estimada: ${h.ram_usage ?? "N/A"}%</small></div>
-                                <div><small class="${metricClass(h.disk_usage, 85, 95)}">Disco: ${h.disk_usage ?? "N/A"}%</small></div>
+                                <div class="snmp-metric-card">
+                                    <div class="snmp-metric-head">
+                                        <small>CPU</small>
+                                        <small class="${metricClass(h.cpu_usage)}">${metricPercent(h.cpu_usage)}</small>
+                                    </div>
+                                    <div class="metric-bar"><span class="metric-fill ${metricClass(h.cpu_usage)}" style="width:${metricBarWidth(h.cpu_usage)}%"></span></div>
+                                </div>
+                                <div class="snmp-metric-card">
+                                    <div class="snmp-metric-head">
+                                        <small>RAM estimada</small>
+                                        <small class="${metricClass(h.ram_usage)}">${metricPercent(h.ram_usage)}</small>
+                                    </div>
+                                    <div class="metric-bar"><span class="metric-fill ${metricClass(h.ram_usage)}" style="width:${metricBarWidth(h.ram_usage)}%"></span></div>
+                                </div>
+                                <div class="snmp-metric-card">
+                                    <div class="snmp-metric-head">
+                                        <small>Disco</small>
+                                        <small class="${metricClass(h.disk_usage, 85, 95)}">${metricPercent(h.disk_usage)}</small>
+                                    </div>
+                                    <div class="metric-bar"><span class="metric-fill ${metricClass(h.disk_usage, 85, 95)}" style="width:${metricBarWidth(h.disk_usage)}%"></span></div>
+                                </div>
                                 <div><small>Rede total: ${formatBps(h.network_traffic)}</small></div>
                                 <div><small>Download (RX): ${formatBps(h.network_in_bps)}</small></div>
                                 <div><small>Upload (TX): ${formatBps(h.network_out_bps)}</small></div>
                             </div>
                         </div>
+            ` : "";
+            const snmpButtonHtml = snmpConfigured ? `
+                        <button onclick="toggleSnmpChart('${h.name}')">
+                            Gráfico SNMP
+                        </button>
+            ` : "";
+            const snmpChartBoxHtml = snmpConfigured ? `
+                <div id="snmp-chart-box-${h.name}" class="chart-box hidden" style="margin-top: 10px;">
+                    <div class="chart-title">Histórico SNMP</div>
+                    <canvas id="snmp-chart-${h.name}" height="120"></canvas>
+                </div>
+            ` : "";
+
+            card.innerHTML = `
+                <div class="card-header">
+                    <div class="host-main-info">
+                        <div class="host-top-line">
+                            <div class="host-title-wrap">
+                                <span class="status-indicator ${statusColor}"></span>
+                                <strong class="host-title">
+                                    ${h.name}
+                                    <small class="host-addr">(${h.address}${h.port ? ':' + h.port : ''})</small>
+                                </strong>
+                            </div>
+                        </div>
+
+                        <div class="host-meta-grid">
+                            <small>Saúde: ${h.health_score ?? "N/A"}% <span class="severity-indicator ${sevClass}">✚</span></small>
+                            <small>Disponibilidade: ${availability10m}%</small>
+                            <small>Último check: ${formatCheckTime(h.last_check)}</small>
+                            <small>Último SNMP: ${formatCheckTime(h.last_snmp_check)}</small>
+                        </div>
+
+                        <div class="metrics-section">
+                            <div class="metrics-title">Rede</div>
+                            <div class="network-split">
+                                <div class="network-col">
+                                    <small><b>Taxa de sucesso</b></small>
+                                    <small>Ping: ${h.sla_rolling_ping ?? "N/A"}%</small>
+                                    <small>TCP: ${h.sla_rolling_tcp ?? "N/A"}%</small>
+                                    <small>HTTP: ${h.sla_rolling_http ?? "N/A"}%</small>
+                                </div>
+                                <div class="network-col">
+                                    <small><b>Variação na latência</b></small>
+                                    <small>Ping: ${h.jitter_ms_ping ?? "N/A"} ms</small>
+                                    <small>TCP: ${h.jitter_ms_tcp ?? "N/A"} ms</small>
+                                    <small>HTTP: ${h.jitter_ms_http ?? "N/A"} ms</small>
+                                </div>
+                            </div>
+                            <small>Tendência HTTP: ${trendIcon(h.trend_http)} ${h.trend_http ?? "N/A"}</small><br>
+                            <small><b>Causa provável:</b> ${h.probable_cause ?? "Operação normal"}</small>
+                            ${snmpStatusHtml}
+                        </div>
+                        ${snmpSectionHtml}
                     </div>
 
                     <div class="button-group">
@@ -285,9 +365,7 @@ async function loadHosts() {
                             onclick="toggleLatencyChart('${h.name}')">
                             Gráfico de latência
                         </button>
-                        <button onclick="toggleSnmpChart('${h.name}')">
-                            Gráfico SNMP
-                        </button>
+                        ${snmpButtonHtml}
                         <button onclick="toggleAvailabilityChartType('${h.name}')">
                             Gráfico de disponibilidade por tipo
                         </button>
@@ -308,16 +386,17 @@ async function loadHosts() {
                 <div id="result-${h.name}" style="margin-top: 10px; font-size: 0.9em;">
                     <i>Atualizando...</i>
                 </div>
-                <div id="chart-container-${h.name}" class="hidden" style="margin-top: 10px;">
+                <div id="chart-container-${h.name}" class="chart-box hidden" style="margin-top: 10px;">
+                    <div class="chart-title">Latência por tipo</div>
                     <canvas id="chart-${h.name}" height="120"></canvas>
                 </div>
-                <div id="snmp-chart-box-${h.name}" class="hidden" style="margin-top: 10px;">
-                    <canvas id="snmp-chart-${h.name}" height="120"></canvas>
-                </div>
-                <div id="availability-chart-type-box-${h.name}" class="hidden">
+                ${snmpChartBoxHtml}
+                <div id="availability-chart-type-box-${h.name}" class="chart-box hidden">
+                    <div class="chart-title">Disponibilidade por tipo</div>
                     <canvas id="availability-chart-type-${h.name}" height="120"></canvas>
                 </div>
-                <div id="availability-chart-box-${h.name}" class="hidden">
+                <div id="availability-chart-box-${h.name}" class="chart-box hidden">
+                    <div class="chart-title">Disponibilidade geral</div>
                     <canvas id="availability-chart-${h.name}" height="120"></canvas>
                 </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
@@ -330,18 +409,109 @@ async function loadHosts() {
             // ATUALIZA OS DADOS DE PING/TCP
             loadLastResult(h.name);
 
-            // SE O GRÁFICO ESTIVER ABERTO, ATUALIZA ELE TAMBÉM
-            const container = document.getElementById("chart-container-" + h.name);
-            if (container && !container.classList.contains("hidden")) {
-                loadLatencyChart(h.name);
+            // Restaura estado aberto para não "reiniciar" visual a cada refresh.
+            const state = openStateByHost[h.name];
+            if (state?.historyOpen) {
+                const historyBox = document.getElementById(`history-${h.name}`);
+                if (historyBox) {
+                    historyBox.classList.remove("hidden");
+                    loadHistory(h.name);
+                }
             }
+
+            if (state?.latencyOpen) {
+                const container = document.getElementById("chart-container-" + h.name);
+                if (container) {
+                    container.classList.remove("hidden");
+                    loadLatencyChart(h.name);
+                }
+            }
+
+            if (state?.snmpOpen) {
+                const snmpBox = document.getElementById("snmp-chart-box-" + h.name);
+                if (snmpBox) {
+                    snmpBox.classList.remove("hidden");
+                    loadSnmpChart(h.name);
+                }
+            }
+
+            if (state?.availabilityTypeOpen) {
+                const typeBox = document.getElementById("availability-chart-type-box-" + h.name);
+                if (typeBox) {
+                    typeBox.classList.remove("hidden");
+                    loadAvailabilityChartType(h.name);
+                }
+            }
+
+            if (state?.availabilityOpen) {
+                const availBox = document.getElementById("availability-chart-box-" + h.name);
+                if (availBox) {
+                    availBox.classList.remove("hidden");
+                    loadAvailability(h.name);
+                }
+            }
+
+            if (openHeatmapIds.has(String(h.id))) {
+                const heatmapBox = document.getElementById(`heatmap-${h.id}`);
+                if (heatmapBox) {
+                    heatmapBox.hidden = false;
+                    const resHeatmap = await fetchWithAuth(`${API}/metrics/heatmap/${h.id}`);
+                    if (resHeatmap?.ok) {
+                        const payload = await resHeatmap.json();
+                        renderHeatmap(heatmapBox, payload, h.name);
+                    }
+                }
+            }
+        }
+
+        // Reaplica filtro após rerender para manter UX estável.
+        const searchInput = document.getElementById("searchInput");
+        const statusFilter = document.getElementById("statusFilter");
+        if (searchInput?.value || (statusFilter && statusFilter.value !== "all")) {
+            filterHosts();
+        }
+    } catch (err) {
+        console.error("Erro ao carregar lista de hosts:", err);
+    }
+}
+
+async function loadHostsQuick() {
+    try {
+        const div = document.getElementById("hosts");
+        if (!div) return;
+        const hasCards = div.querySelectorAll(".card").length > 0;
+        if (!hasCards) {
+            await loadHosts();
+            return;
+        }
+
+        const res = await fetchWithAuth(`${API}/hosts/list`);
+        if (!res || !res.ok) return;
+        const hosts = await res.json();
+
+        for (const h of hosts) {
+            const resultBox = document.getElementById(`result-${h.name}`);
+            if (resultBox) {
+                loadLastResult(h.name);
+            }
+
             const availBox = document.getElementById("availability-chart-box-" + h.name);
             if (availBox && !availBox.classList.contains("hidden")) {
                 loadAvailability(h.name);
             }
-        });
+
+            const latencyBox = document.getElementById("chart-container-" + h.name);
+            if (latencyBox && !latencyBox.classList.contains("hidden")) {
+                loadLatencyChart(h.name);
+            }
+
+            const snmpBox = document.getElementById("snmp-chart-box-" + h.name);
+            if (snmpBox && !snmpBox.classList.contains("hidden")) {
+                loadSnmpChart(h.name);
+            }
+        }
     } catch (err) {
-        console.error("Erro ao carregar lista de hosts:", err);
+        console.error("Erro ao atualizar dados dos hosts:", err);
     }
 }
 
@@ -519,6 +689,122 @@ function metricClass(value, warn = 80, critical = 95) {
     return "metric-ok";
 }
 
+function metricPercent(value) {
+    if (value === null || value === undefined) return "N/A";
+    const n = Number(value);
+    if (Number.isNaN(n)) return "N/A";
+    return `${n.toFixed(1)}%`;
+}
+
+function metricBarWidth(value) {
+    if (value === null || value === undefined) return 0;
+    const n = Number(value);
+    if (Number.isNaN(n)) return 0;
+    return Math.max(0, Math.min(100, n));
+}
+
+function chartCommonOptions(yMin = null, yMax = null, yLabel = "") {
+    const yScale = {
+        title: {
+            display: !!yLabel,
+            text: yLabel
+        },
+        grid: { color: "rgba(148,163,184,0.25)" }
+    };
+    if (yMin !== null && yMin !== undefined) yScale.min = yMin;
+    if (yMax !== null && yMax !== undefined) yScale.max = yMax;
+
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: {
+            mode: "index",
+            intersect: false
+        },
+        plugins: {
+            legend: {
+                position: "top",
+                labels: { boxWidth: 10, usePointStyle: true }
+            },
+            tooltip: {
+                backgroundColor: "rgba(31,41,55,0.92)",
+                titleColor: "#fff",
+                bodyColor: "#e5e7eb"
+            }
+        },
+        scales: {
+            y: yScale,
+            x: {
+                grid: { color: "rgba(148,163,184,0.15)" }
+            }
+        }
+    };
+}
+
+function showChartEmpty(boxId, canvasId, message) {
+    const box = document.getElementById(boxId);
+    const canvas = document.getElementById(canvasId);
+    if (!box || !canvas) return;
+
+    canvas.style.display = "none";
+    let empty = box.querySelector(".chart-empty");
+    if (!empty) {
+        empty = document.createElement("div");
+        empty.className = "chart-empty";
+        box.appendChild(empty);
+    }
+    empty.textContent = message;
+}
+
+function clearChartEmpty(boxId, canvasId) {
+    const box = document.getElementById(boxId);
+    const canvas = document.getElementById(canvasId);
+    if (!box || !canvas) return;
+
+    const empty = box.querySelector(".chart-empty");
+    if (empty) empty.remove();
+    canvas.style.display = "block";
+}
+
+function getDatasetHiddenMap(chart) {
+    const map = {};
+    (chart.data?.datasets || []).forEach((ds, i) => {
+        const meta = chart.getDatasetMeta(i);
+        map[ds.label] = meta?.hidden === true || ds.hidden === true;
+    });
+    return map;
+}
+
+function updateOrCreateChart(chartKey, canvasEl, config) {
+    const current = charts[chartKey];
+
+    if (!current) {
+        charts[chartKey] = new Chart(canvasEl, config);
+        return;
+    }
+
+    if (current.canvas !== canvasEl) {
+        current.destroy();
+        charts[chartKey] = new Chart(canvasEl, config);
+        return;
+    }
+
+    const hiddenMap = getDatasetHiddenMap(current);
+    (config.data.datasets || []).forEach((ds) => {
+        if (Object.prototype.hasOwnProperty.call(hiddenMap, ds.label)) {
+            ds.hidden = hiddenMap[ds.label];
+        }
+    });
+
+    current.config.type = config.type;
+    current.config.plugins = config.plugins || [];
+    current.data.labels = config.data.labels || [];
+    current.data.datasets = config.data.datasets || [];
+    current.options = config.options || {};
+    current.update("none");
+}
+
 function formatCheckTime(value) {
     if (!value) return "N/A";
     const dt = new Date(value);
@@ -565,10 +851,6 @@ async function submitModalEdit() {
 
 async function loadLatencyChart(name) {
     const chartKey = `latency-${name}`;
-
-    if (charts[chartKey]) {
-        charts[chartKey].destroy();
-    }
     const res = await fetchWithAuth(`${API}/host/history/${name}`);
     
     if (!res || !res.ok) return;
@@ -586,49 +868,65 @@ async function loadLatencyChart(name) {
     const pingData = ping.map(c => c.latency);
     const tcpData  = tcp.map(c => c.latency);
     const httpData = http.map(c => c.latency);
-
     const ctx = document.getElementById("chart-" + name);
+    const containerId = "chart-container-" + name;
+    const canvasId = "chart-" + name;
 
     if (!ctx) return;
+    if (!ping.length && !tcp.length && !http.length) {
+        showChartEmpty(containerId, canvasId, "Sem dados de latência para este host.");
+        return;
+    }
+    clearChartEmpty(containerId, canvasId);
 
-    charts[chartKey] = new Chart(ctx, {
+    updateOrCreateChart(chartKey, ctx, {
         type: "line",
         data: {
             labels: labels,
             datasets: [
                 {
                     label: "Ping",
-                    data: pingData
+                    data: pingData,
+                    borderColor: "#22c55e",
+                    backgroundColor: "#22c55e33",
+                    tension: 0.3
                 },
                 {
                     label: "TCP",
-                    data: tcpData
+                    data: tcpData,
+                    borderColor: "#3b82f6",
+                    backgroundColor: "#3b82f633",
+                    tension: 0.3
                 }
                 ,{
                     label: "HTTP",
-                    data: httpData
+                    data: httpData,
+                    borderColor: "#f59e0b",
+                    backgroundColor: "#f59e0b33",
+                    tension: 0.3
                 }
             ]
         },
-        options: {
-            responsive: true,
-            animation: false
-        }
+        options: chartCommonOptions(null, null, "Latência (ms)")
     });
 }
 
 async function loadSnmpChart(name) {
     const chartKey = `snmp-${name}`;
 
-    if (charts[chartKey]) {
-        charts[chartKey].destroy();
-    }
-
     const res = await fetchWithAuth(`${API}/metrics/snmp/${name}`);
     if (!res || !res.ok) return;
 
     const data = await res.json();
     const points = data.points || [];
+    const boxId = "snmp-chart-box-" + name;
+    const canvasId = "snmp-chart-" + name;
+
+    if (!points.length) {
+        showChartEmpty(boxId, canvasId, "Sem histórico SNMP para este host.");
+        return;
+    }
+    clearChartEmpty(boxId, canvasId);
 
     const labels = points.map(p => new Date(p.timestamp).toLocaleTimeString());
     const cpu = points.map(p => p.cpu);
@@ -640,7 +938,7 @@ async function loadSnmpChart(name) {
     const ctx = document.getElementById("snmp-chart-" + name);
     if (!ctx) return;
 
-    charts[chartKey] = new Chart(ctx, {
+    updateOrCreateChart(chartKey, ctx, {
         type: "line",
         data: {
             labels,
@@ -689,13 +987,32 @@ async function loadSnmpChart(name) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             animation: false,
+            interaction: {
+                mode: "index",
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    position: "top",
+                    labels: { boxWidth: 10, usePointStyle: true }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            if (ctx.dataset.yAxisID === "y_percent") {
+                                return `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed?.(2) ?? ctx.parsed.y}%`;
+                            }
+                            return `${ctx.dataset.label}: ${formatBps(ctx.parsed.y)}`;
+                        }
+                    }
+                }
+            },
             scales: {
                 y_percent: {
                     type: "linear",
                     position: "left",
-                    min: 0,
-                    max: 100,
                     title: {
                         display: true,
                         text: "Uso (%)"
@@ -775,11 +1092,17 @@ async function loadAvailabilityChartType(name) {
 
     const chartKey = `availability-type-${name}`;
 
-    if (charts[chartKey]) {
-        charts[chartKey].destroy();
+    if (!labels.length) {
+        showChartEmpty(
+            "availability-chart-type-box-" + name,
+            "availability-chart-type-" + name,
+            "Sem dados de disponibilidade por tipo."
+        );
+        return;
     }
+    clearChartEmpty("availability-chart-type-box-" + name, "availability-chart-type-" + name);
 
-    charts[chartKey] = new Chart(ctx, {
+    updateOrCreateChart(chartKey, ctx, {
         type: "line",
         data: {
             labels: labels,
@@ -810,13 +1133,7 @@ async function loadAvailabilityChartType(name) {
                 }
             ]
         },
-        options: {
-            animation: false,
-            responsive: true,
-            scales: {
-                y: { min: 0, max: 100 }
-            }
-        }
+        options: chartCommonOptions(null, null, "Disponibilidade (%)")
     });
 }
 
@@ -944,14 +1261,19 @@ async function loadAvailability(name) {
         const labels = data.map(p => new Date(p.timestamp).toLocaleTimeString());
         const values = data.map(p => p.availability);
 
-        // Destruir se já existir para evitar bugs visuais ao passar o mouse
         const chartKey = `availability-${name}`;
 
-        if (charts[chartKey]) {
-            charts[chartKey].destroy();
+        if (!labels.length) {
+            showChartEmpty(
+                "availability-chart-box-" + name,
+                "availability-chart-" + name,
+                "Sem dados de disponibilidade."
+            );
+            return;
         }
+        clearChartEmpty("availability-chart-box-" + name, "availability-chart-" + name);
 
-        charts[chartKey] = new Chart(ctx, {
+        updateOrCreateChart(chartKey, ctx, {
             type: 'line',
             data: {
                 labels: labels,
@@ -965,9 +1287,10 @@ async function loadAvailability(name) {
                 }]
             },
             options: {
-                responsive: true,
-                scales: {
-                    y: { min: 0, max: 100 }
+                ...chartCommonOptions(null, null, "Disponibilidade (%)"),
+                plugins: {
+                    ...chartCommonOptions(null, null, "Disponibilidade (%)").plugins,
+                    legend: { display: false }
                 }
             }
         });
@@ -1015,6 +1338,18 @@ async function loadDashboardSummary() {
     if (!res || !res.ok) return;
 
     const data = await res.json();
+    let topCpuRamText = "N/A";
+    if (data.top_cpu_host && data.top_ram_host) {
+        if (data.top_cpu_host.host === data.top_ram_host.host) {
+            topCpuRamText = `${data.top_cpu_host.host} CPU: ${data.top_cpu_host.value}% | RAM: ${data.top_ram_host.value}%`;
+        } else {
+            topCpuRamText = `${data.top_cpu_host.host} CPU: ${data.top_cpu_host.value}% | ${data.top_ram_host.host} RAM: ${data.top_ram_host.value}%`;
+        }
+    } else if (data.top_cpu_host) {
+        topCpuRamText = `${data.top_cpu_host.host} CPU: ${data.top_cpu_host.value}% | RAM: N/A`;
+    } else if (data.top_ram_host) {
+        topCpuRamText = `${data.top_ram_host.host} CPU: N/A | RAM: ${data.top_ram_host.value}%`;
+    }
 
     box.innerHTML = `
         <div class="summary-card">
@@ -1047,7 +1382,7 @@ async function loadDashboardSummary() {
         </div>
         <div class="summary-card summary-card-wide">
             <small>Maior CPU / RAM</small>
-            <strong>${data.top_cpu_host ? `${data.top_cpu_host.host} (${data.top_cpu_host.value}%)` : "N/A"} | ${data.top_ram_host ? `${data.top_ram_host.host} (${data.top_ram_host.value}%)` : "N/A"}</strong>
+            <strong>${topCpuRamText}</strong>
         </div>
     `;
 }
@@ -1077,7 +1412,7 @@ function filterHosts() {
 // Inicialização e Loop
 // ======================
 
-setInterval(loadHosts, 5000);
+setInterval(loadHostsQuick, 5000);
 setInterval(loadTimeline, 15000);
 setInterval(checkAlerts, 5000);
 setInterval(loadDashboardSummary, 10000);

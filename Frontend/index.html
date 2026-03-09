@@ -10,31 +10,40 @@
 
 <body>
 <div class="container">
-<h1>Dashboard</h1>
-
-<section>
-
-    <div class="top-actions">
-        <button id="changePasswordBtn">Alterar Senha</button>
-        <button id="logoutBtn">Sair do Sistema</button>
+<div class="dashboard-hero">
+    <div class="dashboard-hero-top">
+        <div class="hero-copy">
+            <h1>Painel NOC Lite</h1>
+            <p>Monitoramento operacional em tempo real de rede, serviços e infraestrutura.</p>
+        </div>
+        <div class="top-actions top-actions-hero">
+            <button id="changePasswordBtn">Alterar Senha</button>
+            <button id="logoutBtn">Sair do Sistema</button>
+        </div>
     </div>
+</div>
 
-    <h2>Resumo da Rede</h2>
-    <div id="dashboardSummary" class="summary-grid"></div>
-
-    <h2>Cadastrar Host</h2>
-
-    <form id="hostForm">
-        <input id="name" placeholder="Nome" required>
-        <input id="address" placeholder="Endereço/IP" required>
-        <input id="port" type="number" min="1" max="65535" placeholder="Porta" required>
-        <input id="http_url" placeholder="URL HTTP (opcional)">
-        <button type="submit">Cadastrar</button>
-    </form>
-
+<section class="panel-section">
+    <article class="overview-card">
+        <h2>Resumo da Rede</h2>
+        <div id="dashboardSummary" class="summary-grid"></div>
+    </article>
 </section>
 
-<section>
+<section class="panel-section">
+    <article class="overview-card">
+        <h2>Cadastrar Host</h2>
+        <form id="hostForm">
+            <input id="name" placeholder="Nome" required>
+            <input id="address" placeholder="Endereço/IP" required>
+            <input id="port" type="number" min="1" max="65535" placeholder="Porta" required>
+            <input id="http_url" placeholder="URL HTTP (opcional)">
+            <button type="submit">Cadastrar</button>
+        </form>
+    </article>
+</section>
+
+<section class="panel-section">
       <div class="filter-bar">
         <input type="text" id="searchInput" placeholder="Filtrar por nome ou IP..." onkeyup="filterHosts()">
         <select id="statusFilter" onchange="filterHosts()">
@@ -44,8 +53,10 @@
             <option value="bg-warning">Degradado</option>
         </select>
     </div>
-    <h2>Hosts</h2>
-    <button id="refreshBtn">Atualizar Lista</button>
+    <div class="hosts-toolbar">
+      <h2>Hosts</h2>
+      <button id="refreshBtn">Atualizar Lista</button>
+    </div>
     <div id="hosts"></div>
 </section>
 
@@ -85,7 +96,7 @@
   </div>
 </div>
 
-<div class="timeline-container">
+<div class="timeline-container panel-section">
     <h3>Histórico de Incidentes Recentes</h3>
     <div id="incidentTimeline" class="timeline">
         </div>
