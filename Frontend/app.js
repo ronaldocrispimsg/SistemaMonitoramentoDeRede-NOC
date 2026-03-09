@@ -1,33 +1,6 @@
 const API = "http://127.0.0.1:8000";
 const charts = {};
-const HEATMAP_WINDOW_PRESETS = [
-    { label: "30 min", minutes: 30 },
-    { label: "1 h", minutes: 60 },
-    { label: "2 h", minutes: 120 },
-    { label: "6 h", minutes: 360 },
-    { label: "12 h", minutes: 720 },
-    { label: "24 h", minutes: 1440 }
-];
-const storedHeatmapWindow = Number(localStorage.getItem("heatmap_window_minutes"));
-let HEATMAP_WINDOW_MINUTES = HEATMAP_WINDOW_PRESETS.some((preset) => preset.minutes === storedHeatmapWindow)
-    ? storedHeatmapWindow
-    : 30;
-const HEATMAP_COLUMNS = 20;
-const HEATMAP_ROWS = 10;
-const HEATMAP_TOTAL_CELLS = HEATMAP_COLUMNS * HEATMAP_ROWS;
-const HEATMAP_LATENCY_THRESHOLDS = {
-    ping: { warn: 80, high: 150 },
-    tcp: { warn: 150, high: 300 },
-    http: { warn: 600, high: 1000 },
-    dns: { warn: 0, high: 0 }
-};
-
-function getHeatmapUrl(hostId) {
-    const params = new URLSearchParams({
-        window_minutes: String(HEATMAP_WINDOW_MINUTES)
-    });
-    return `${API}/metrics/heatmap/${hostId}?${params.toString()}`;
-}
+const MAX_POINTS_PER_SERIES = 100;
 
 if (Notification.permission !== "granted") {
     Notification.requestPermission();
@@ -36,10 +9,9 @@ if (Notification.permission !== "granted") {
 const token = localStorage.getItem("token");
 const isLoginPage = window.location.pathname.includes("login.html");
 
-
 // se estiver logado e abrir login → vai pro dashboard
 if (token && isLoginPage) {
-    window.location.href = "index.html";
+    window.location.href = "dashboard.html";
 }
 
 // se NÃO estiver logado e tentar acessar sistema → volta pro login
@@ -52,6 +24,14 @@ if (!token && !isLoginPage) {
 // ======================
 async function fetchWithAuth(url, options = {}) {
     const token = localStorage.getItem("token");
+    if (!token) {
+        if (!isLoginPage) {
+            localStorage.clear();
+            window.location.href = "login.html";
+        }
+        return null;
+    }
+
     const headers = {
         "Content-Type": "application/json",
         ...options.headers,
@@ -62,7 +42,9 @@ async function fetchWithAuth(url, options = {}) {
         const response = await fetch(url, { ...options, headers });
         
         if (!response || response.status === 401) {
-            alert("Sessão expirada. Por favor, faça login novamente.");
+            if (!isLoginPage) {
+                alert("Sessão expirada. Por favor, faça login novamente.");
+            }
             localStorage.clear();
             window.location.href = "login.html";
             return null;
@@ -105,7 +87,7 @@ if (loginForm) {
                     document.getElementById("pwdModal").classList.remove("hidden");
                 } else {
                     alert("Login realizado com sucesso!");
-                    window.location.href="index.html";
+                    window.location.href="dashboard.html";
                 }
             } else {
                 alert("Erro: " + (data.detail || "Credenciais inválidas"));
@@ -139,7 +121,7 @@ async function submitChangePassword(){
 
     if(res.ok){
         alert("Senha alterada! Sistema Liberado.");
-        window.location.href="index.html";
+        window.location.href="dashboard.html";
     }else{
         alert("Erro ao alterar senha");
     }
@@ -236,7 +218,6 @@ async function loadHosts() {
 
     try {
         const openStateByHost = {};
-        const openHeatmapIds = new Set();
         div.querySelectorAll(".card").forEach((card) => {
             const id = card.id || "";
             if (!id.startsWith("card-")) return;
@@ -248,11 +229,6 @@ async function loadHosts() {
                 availabilityTypeOpen: !document.getElementById(`availability-chart-type-box-${hostName}`)?.classList.contains("hidden"),
                 availabilityOpen: !document.getElementById(`availability-chart-box-${hostName}`)?.classList.contains("hidden")
             };
-        });
-        div.querySelectorAll(".heatmap-box").forEach((box) => {
-            if (box.hidden === false) {
-                openHeatmapIds.add(String(box.id).replace("heatmap-", ""));
-            }
         });
 
         const res = await fetchWithAuth(`${API}/hosts/list`);
@@ -268,9 +244,6 @@ async function loadHosts() {
             const card = document.createElement("div");
             card.className = "card";
             card.id = `card-${h.name}`;
-            if (h.severity === "CRITICAL") {
-                card.classList.add("card-critical");
-            }
 
             let statusColor = "bg-secondary";
             if (h.status === "UP") statusColor = "bg-success";
@@ -400,9 +373,6 @@ async function loadHosts() {
                         <button onclick="toggleAvailabilityChart('${h.name}')">
                             Gráfico de disponibilidade geral
                         </button>
-                        <button onclick="toggleHeatmap(${h.id}, '${h.name}')">
-                            Heatmap
-                        </button>
                         <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}')">
                             Editar
                         </button>
@@ -428,7 +398,6 @@ async function loadHosts() {
                     <canvas id="availability-chart-${h.name}" height="120"></canvas>
                 </div>
                 <div id="history-${h.name}" class="history-box hidden"></div>
-                <div id="heatmap-${h.id}" class="heatmap-box" hidden></div>
                 
             `;
 
@@ -479,17 +448,6 @@ async function loadHosts() {
                 }
             }
 
-            if (openHeatmapIds.has(String(h.id))) {
-                const heatmapBox = document.getElementById(`heatmap-${h.id}`);
-                if (heatmapBox) {
-                    heatmapBox.hidden = false;
-                    const resHeatmap = await fetchWithAuth(getHeatmapUrl(h.id));
-                    if (resHeatmap?.ok) {
-                        const payload = await resHeatmap.json();
-                        renderHeatmap(heatmapBox, payload, h.name);
-                    }
-                }
-            }
         }
 
         // Reaplica filtro após rerender para manter UX estável.
@@ -615,7 +573,7 @@ async function loadHistory(name) {
                     <strong>${statusText}</strong> —
                     ${statusInfo}
                     ${c.latency !== null ? c.latency + " ms" : "---"} —
-                    <small>${new Date(c.timestamp).toLocaleTimeString()}</small>
+                    <small>${formatApiTime(c.timestamp)}</small>
                 </div>
             `;
         }).join("");
@@ -636,53 +594,6 @@ async function toggleHistory(name) {
     box.classList.remove("hidden");
     await loadHistory(name);
 }
-
-async function toggleHeatmap(hostId, hostName) {
-    const box = document.getElementById(`heatmap-${hostId}`);
-    if (!box) return;
-
-    box.dataset.hostName = hostName;
-    box.dataset.hostId = String(hostId);
-
-    box.hidden = !box.hidden;
-
-    if (box.hidden) return;
-
-    const res = await fetchWithAuth(getHeatmapUrl(hostId));
-    if (!res || !res.ok) return;
-
-    const data = await res.json();
-    renderHeatmap(box, data, hostName);
-}
-
-async function refreshOpenHeatmaps() {
-    const openHeatmaps = document.querySelectorAll(".heatmap-box:not([hidden])");
-
-    for (const box of openHeatmaps) {
-        const hostId = box.dataset.hostId || String(box.id || "").replace("heatmap-", "");
-        if (!hostId) continue;
-
-        const hostName = box.dataset.hostName || "Host";
-        const res = await fetchWithAuth(getHeatmapUrl(hostId));
-        if (!res || !res.ok) continue;
-
-        const data = await res.json();
-        renderHeatmap(box, data, hostName);
-    }
-}
-
-async function updateHeatmapWindow(minutes) {
-    const parsed = Number(minutes);
-    const valid = HEATMAP_WINDOW_PRESETS.some((preset) => preset.minutes === parsed);
-    if (!valid) return;
-
-    HEATMAP_WINDOW_MINUTES = parsed;
-    localStorage.setItem("heatmap_window_minutes", String(parsed));
-
-    await refreshOpenHeatmaps();
-}
-
-window.updateHeatmapWindow = updateHeatmapWindow;
 
 async function toggleLatencyChart(name) {
     const container = document.getElementById("chart-container-" + name);
@@ -773,13 +684,18 @@ function metricBarWidth(value) {
     return Math.max(0, Math.min(100, n));
 }
 
+function takeLast(items, limit = MAX_POINTS_PER_SERIES) {
+    if (!Array.isArray(items)) return [];
+    if (items.length <= limit) return items;
+    return items.slice(items.length - limit);
+}
+
 function chartCommonOptions(yMin = null, yMax = null, yLabel = "") {
     const yScale = {
         title: {
             display: !!yLabel,
             text: yLabel
-        },
-        grid: { color: "rgba(148,163,184,0.25)" }
+        }
     };
     if (yMin !== null && yMin !== undefined) yScale.min = yMin;
     if (yMax !== null && yMax !== undefined) yScale.max = yMax;
@@ -787,27 +703,9 @@ function chartCommonOptions(yMin = null, yMax = null, yLabel = "") {
     return {
         responsive: true,
         maintainAspectRatio: false,
-        animation: false,
-        interaction: {
-            mode: "index",
-            intersect: false
-        },
-        plugins: {
-            legend: {
-                position: "top",
-                labels: { boxWidth: 10, usePointStyle: true }
-            },
-            tooltip: {
-                backgroundColor: "rgba(31,41,55,0.92)",
-                titleColor: "#fff",
-                bodyColor: "#e5e7eb"
-            }
-        },
         scales: {
             y: yScale,
-            x: {
-                grid: { color: "rgba(148,163,184,0.15)" }
-            }
+            x: {}
         }
     };
 }
@@ -875,11 +773,35 @@ function updateOrCreateChart(chartKey, canvasEl, config) {
     current.update("none");
 }
 
-function formatCheckTime(value) {
-    if (!value) return "N/A";
+function parseApiDate(value) {
+    if (!value) return null;
+
+    if (typeof value === "string") {
+        const hasTimezone = /[zZ]|[+\-]\d{2}:\d{2}$/.test(value);
+        const normalized = hasTimezone ? value : `${value}Z`;
+        const dt = new Date(normalized);
+        if (!Number.isNaN(dt.getTime())) return dt;
+    }
+
     const dt = new Date(value);
-    if (Number.isNaN(dt.getTime())) return "N/A";
-    return dt.toLocaleTimeString();
+    if (Number.isNaN(dt.getTime())) return null;
+    return dt;
+}
+
+function formatApiTime(value) {
+    const dt = parseApiDate(value);
+    if (!dt) return "N/A";
+    return dt.toLocaleTimeString("pt-BR");
+}
+
+function formatApiDateTime(value) {
+    const dt = parseApiDate(value);
+    if (!dt) return "N/A";
+    return dt.toLocaleString("pt-BR");
+}
+
+function formatCheckTime(value) {
+    return formatApiTime(value);
 }
 
 function trendIcon(trend) {
@@ -927,13 +849,11 @@ async function loadLatencyChart(name) {
 
     const data = await res.json();
 
-    const ping = data.checks.filter(c => c.type === "ping");
-    const tcp  = data.checks.filter(c => c.type === "tcp");
-    const http = data.checks.filter(c => c.type === "http");
+    const ping = takeLast(data.checks.filter(c => c.type === "ping"));
+    const tcp  = takeLast(data.checks.filter(c => c.type === "tcp"));
+    const http = takeLast(data.checks.filter(c => c.type === "http"));
 
-    const labels = ping.map(c =>
-        new Date(c.timestamp).toLocaleTimeString()
-    );
+    const labels = ping.map(c => formatApiTime(c.timestamp));
 
     const pingData = ping.map(c => c.latency);
     const tcpData  = tcp.map(c => c.latency);
@@ -988,7 +908,7 @@ async function loadSnmpChart(name) {
     if (!res || !res.ok) return;
 
     const data = await res.json();
-    const points = data.points || [];
+    const points = takeLast(data.points || []);
     const boxId = "snmp-chart-box-" + name;
     const canvasId = "snmp-chart-" + name;
 
@@ -998,7 +918,7 @@ async function loadSnmpChart(name) {
     }
     clearChartEmpty(boxId, canvasId);
 
-    const labels = points.map(p => new Date(p.timestamp).toLocaleTimeString());
+    const labels = points.map(p => formatApiTime(p.timestamp));
     const cpu = points.map(p => p.cpu);
     const ram = points.map(p => p.ram);
     const disk = points.map(p => p.disk);
@@ -1058,21 +978,13 @@ async function loadSnmpChart(name) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: false,
-            interaction: {
-                mode: "index",
-                intersect: false
-            },
             plugins: {
-                legend: {
-                    position: "top",
-                    labels: { boxWidth: 10, usePointStyle: true }
-                },
                 tooltip: {
                     callbacks: {
                         label: (ctx) => {
                             if (ctx.dataset.yAxisID === "y_percent") {
-                                return `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed?.(2) ?? ctx.parsed.y}%`;
+                                const value = Number(ctx.parsed.y);
+                                return `${ctx.dataset.label}: ${Number.isFinite(value) ? value.toFixed(2) : "N/A"}%`;
                             }
                             return `${ctx.dataset.label}: ${formatBps(ctx.parsed.y)}`;
                         }
@@ -1083,6 +995,8 @@ async function loadSnmpChart(name) {
                 y_percent: {
                     type: "linear",
                     position: "left",
+                    min: 0,
+                    max: 100,
                     title: {
                         display: true,
                         text: "Uso (%)"
@@ -1091,10 +1005,7 @@ async function loadSnmpChart(name) {
                 y_bps: {
                     type: "linear",
                     position: "right",
-                    title: {
-                        display: true,
-                        text: "Tráfego (bps)"
-                    },
+                    display: false,
                     grid: {
                         drawOnChartArea: false
                     }
@@ -1104,400 +1015,6 @@ async function loadSnmpChart(name) {
     });
 }
 
-function parseBackendTimestampToMs(value) {
-    if (!value) return NaN;
-
-    // Se vier sem timezone, assume UTC
-    if (typeof value === "string" && !/[zZ]|[+\-]\d{2}:\d{2}$/.test(value)) {
-        return Date.parse(`${value}Z`);
-    }
-
-    return Date.parse(value);
-}
-
-function renderHeatmap(container, payload, hostName) {
-    container.dataset.hostName = hostName;
-
-    const rows = Array.isArray(payload) ? payload : (payload?.data || []);
-    const checkType = Array.isArray(payload) ? "auto" : (payload?.check_type || "auto");
-    const totalCells = HEATMAP_TOTAL_CELLS;
-    const columns = HEATMAP_COLUMNS;
-    const rowsCount = HEATMAP_ROWS;
-    const effectiveWindowMinutes = Number(payload?.window_minutes || HEATMAP_WINDOW_MINUTES);
-    const timeWindowMs = effectiveWindowMinutes * 60 * 1000;
-
-    if (!rows.length) {
-        container.innerHTML = "<p>Sem dados para heatmap.</p>";
-        return;
-    }
-
-    const rowsWithTs = rows
-        .map((item) => ({
-            ...item,
-            ts: parseBackendTimestampToMs(item.timestamp)
-        }))
-        .filter((item) => !Number.isNaN(item.ts))
-        .sort((a, b) => a.ts - b.ts);
-
-    if (!rowsWithTs.length) {
-        container.innerHTML = "<p>Sem dados válidos de timestamp para heatmap.</p>";
-        return;
-    }
-
-    // ancora no último check real para evitar buckets vazios artificiais
-    const latestTs = rowsWithTs[rowsWithTs.length - 1].ts;
-    const periodEnd = latestTs;
-    const periodStart = periodEnd - timeWindowMs;
-
-    const windowRows = rowsWithTs.filter(
-        (item) => item.ts >= periodStart && item.ts <= periodEnd
-    );
-
-    if (!windowRows.length) {
-        container.innerHTML = "<p>Sem checks na janela selecionada.</p>";
-        return;
-    }
-
-    const bucketSizeMs = timeWindowMs / totalCells;
-    function getLatencyLevelByType(type, latency) {
-        if (!Number.isFinite(latency)) return 0;
-
-        const normalizedType = String(type || "").toLowerCase();
-        const thresholds = HEATMAP_LATENCY_THRESHOLDS[normalizedType];
-
-        if (!thresholds) return 0;
-        if (normalizedType === "dns") return 0;
-
-        if (latency > thresholds.high) return 2;
-        if (latency > thresholds.warn) return 1;
-        return 0;
-    }
-
-    const realBuckets = Array.from({ length: totalCells }, (_, index) => {
-        const startTs = periodStart + index * bucketSizeMs;
-        const endTs = index === totalCells - 1
-            ? periodEnd
-            : periodStart + (index + 1) * bucketSizeMs;
-
-        return {
-            checks: 0,
-            successCount: 0,
-            failCount: 0,
-
-            pingChecks: 0,
-            pingSuccessCount: 0,
-            pingFailCount: 0,
-
-            tcpChecks: 0,
-            tcpSuccessCount: 0,
-            tcpFailCount: 0,
-
-            httpChecks: 0,
-            httpSuccessCount: 0,
-            httpFailCount: 0,
-
-            dnsChecks: 0,
-            dnsSuccessCount: 0,
-            dnsFailCount: 0,
-
-            pingLatencySum: 0,
-            pingLatencyCount: 0,
-            tcpLatencySum: 0,
-            tcpLatencyCount: 0,
-            httpLatencySum: 0,
-            httpLatencyCount: 0,
-
-            avgLatency: null, // média geral (apenas referência no tooltip)
-            dominantAvgLatency: null, // média usada para classificar cor
-            dominantLatencyLevel: 0,
-
-            dominantType: null,
-            dominantTypeCount: 0,
-
-            startTs,
-            endTs,
-            filledFromPrevious: false
-        };
-    });
-
-    for (const item of windowRows) {
-        let bucketIndex = Math.floor((item.ts - periodStart) / bucketSizeMs);
-
-        if (bucketIndex < 0) bucketIndex = 0;
-        if (bucketIndex >= totalCells) bucketIndex = totalCells - 1;
-
-        const bucket = realBuckets[bucketIndex];
-        bucket.checks += 1;
-
-        const type = String(item.check_type || "").toLowerCase();
-
-        if (type === "ping") {
-            bucket.pingChecks += 1;
-            if (item.success) bucket.pingSuccessCount += 1;
-            else bucket.pingFailCount += 1;
-        } else if (type === "tcp") {
-            bucket.tcpChecks += 1;
-            if (item.success) bucket.tcpSuccessCount += 1;
-            else bucket.tcpFailCount += 1;
-        } else if (type === "http") {
-            bucket.httpChecks += 1;
-            if (item.success) bucket.httpSuccessCount += 1;
-            else bucket.httpFailCount += 1;
-        } else if (type === "dns") {
-            bucket.dnsChecks += 1;
-            if (item.success) bucket.dnsSuccessCount += 1;
-            else bucket.dnsFailCount += 1;
-        }
-
-        if (item.success) {
-            bucket.successCount += 1;
-
-            const latency = Number(item.latency);
-            if (!Number.isNaN(latency) && type !== "dns") {
-                if (type === "ping") {
-                    bucket.pingLatencySum += latency;
-                    bucket.pingLatencyCount += 1;
-                } else if (type === "tcp") {
-                    bucket.tcpLatencySum += latency;
-                    bucket.tcpLatencyCount += 1;
-                } else if (type === "http") {
-                    bucket.httpLatencySum += latency;
-                    bucket.httpLatencyCount += 1;
-                }
-            }
-        } else {
-            bucket.failCount += 1;
-        }
-    }
-
-    for (const bucket of realBuckets) {
-        const totalLatencyCount = bucket.pingLatencyCount + bucket.tcpLatencyCount + bucket.httpLatencyCount;
-        const totalLatencySum = bucket.pingLatencySum + bucket.tcpLatencySum + bucket.httpLatencySum;
-        if (totalLatencyCount > 0) {
-            bucket.avgLatency = totalLatencySum / totalLatencyCount;
-        }
-
-        const pingAvg = bucket.pingLatencyCount > 0 ? (bucket.pingLatencySum / bucket.pingLatencyCount) : null;
-        const tcpAvg = bucket.tcpLatencyCount > 0 ? (bucket.tcpLatencySum / bucket.tcpLatencyCount) : null;
-        const httpAvg = bucket.httpLatencyCount > 0 ? (bucket.httpLatencySum / bucket.httpLatencyCount) : null;
-
-        const candidates = [
-            { type: "ping", checks: bucket.pingChecks, success: bucket.pingSuccessCount, avg: pingAvg },
-            { type: "tcp", checks: bucket.tcpChecks, success: bucket.tcpSuccessCount, avg: tcpAvg },
-            { type: "http", checks: bucket.httpChecks, success: bucket.httpSuccessCount, avg: httpAvg }
-        ].filter((candidate) => candidate.checks > 0);
-
-        let dominant = null;
-        if (candidates.length > 0) {
-            const typePriority = { tcp: 4, ping: 3, http: 2, dns: 1 };
-            const withNormalized = candidates.map((candidate) => {
-                const warn = HEATMAP_LATENCY_THRESHOLDS[candidate.type]?.warn || 1;
-                const normalized = Number.isFinite(candidate.avg) ? (candidate.avg / warn) : Number.POSITIVE_INFINITY;
-                return { ...candidate, normalized };
-            });
-
-            withNormalized.sort((a, b) => {
-                // 1) maior número de checks com sucesso
-                if (b.success !== a.success) return b.success - a.success;
-                // 2) menor latência normalizada
-                if (a.normalized !== b.normalized) return a.normalized - b.normalized;
-                // 3) prioridade fixa
-                return (typePriority[b.type] || 0) - (typePriority[a.type] || 0);
-            });
-
-            dominant = withNormalized[0];
-        } else if (bucket.dnsChecks > 0) {
-            // DNS só domina se não houver ping/tcp/http no bucket
-            dominant = { type: "dns", checks: bucket.dnsChecks, success: bucket.dnsSuccessCount, avg: null };
-        }
-
-        bucket.dominantType = dominant ? dominant.type : null;
-        bucket.dominantTypeCount = dominant ? dominant.checks : 0;
-        bucket.dominantAvgLatency = dominant ? dominant.avg : null;
-
-        bucket.dominantLatencyLevel = getLatencyLevelByType(
-            bucket.dominantType,
-            bucket.dominantAvgLatency
-        );
-    }
-
-    // Preenchimento visual: remove "buracos" usando o último bucket válido anterior
-    const displayBuckets = realBuckets.map((bucket) => ({ ...bucket }));
-    let lastValidBucket = null;
-
-    for (let i = 0; i < displayBuckets.length; i += 1) {
-        const bucket = displayBuckets[i];
-
-        if (bucket.checks > 0) {
-            lastValidBucket = { ...bucket, filledFromPrevious: false };
-            continue;
-        }
-
-        if (lastValidBucket) {
-            displayBuckets[i] = {
-                ...bucket,
-                ...lastValidBucket,
-                startTs: bucket.startTs,
-                endTs: bucket.endTs,
-                filledFromPrevious: true
-            };
-        }
-    }
-
-    function bucketHasRealFailure(bucket) {
-        if (bucket.httpFailCount > 0) return true;
-        if (bucket.tcpFailCount > 0) return true;
-        if (bucket.dnsFailCount > 0) return true;
-
-        if (
-            bucket.pingFailCount > 0 &&
-            bucket.tcpChecks === 0 &&
-            bucket.httpChecks === 0 &&
-            bucket.dnsChecks === 0
-        ) {
-            return true;
-        }
-
-        return false;
-    }
-
-    const noDataRaw = realBuckets.filter((bucket) => bucket.checks === 0).length;
-
-    let ok = 0;
-    let warn = 0;
-    let high = 0;
-    let fail = 0;
-
-    for (const item of realBuckets) {
-        if (item.checks === 0) continue;
-
-        if (bucketHasRealFailure(item)) {
-            fail += 1;
-        } else if (item.dominantLatencyLevel >= 2) {
-            high += 1;
-        } else if (item.dominantLatencyLevel >= 1) {
-            warn += 1;
-        } else {
-            ok += 1;
-        }
-    }
-
-    const oldestIdx = realBuckets.findIndex((bucket) => bucket.checks > 0);
-    const newestIdx = (() => {
-        for (let i = realBuckets.length - 1; i >= 0; i -= 1) {
-            if (realBuckets[i].checks > 0) return i;
-        }
-        return -1;
-    })();
-
-    const formatDateTime = (ts) =>
-        new Date(ts).toLocaleString("pt-BR", {
-            day: "2-digit",
-            month: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit"
-        });
-
-    const oldestTs = oldestIdx >= 0 ? formatDateTime(realBuckets[oldestIdx].startTs) : "N/A";
-    const newestTs = newestIdx >= 0 ? formatDateTime(realBuckets[newestIdx].endTs) : "N/A";
-
-    const windowLabel =
-        HEATMAP_WINDOW_PRESETS.find((preset) => preset.minutes === effectiveWindowMinutes)?.label
-        || `${effectiveWindowMinutes} min`;
-
-    const optionsHtml = HEATMAP_WINDOW_PRESETS.map((preset) =>
-        `<option value="${preset.minutes}" ${preset.minutes === effectiveWindowMinutes ? "selected" : ""}>${preset.label}</option>`
-    ).join("");
-
-    const intervalMinutes = bucketSizeMs / 60000;
-    const checksPerCellLabel = `${intervalMinutes.toFixed(1)} min`;
-
-    let html = `
-        <div class="heatmap-header">
-            <h4>Heatmap de Latência - ${hostName}</h4>
-            <div class="heatmap-header-controls">
-                <label class="heatmap-window-label" for="heatmap-window-${container.id}">Janela</label>
-                <select id="heatmap-window-${container.id}" class="heatmap-window-select" onchange="updateHeatmapWindow(this.value)">
-                    ${optionsHtml}
-                </select>
-                <small>${windowLabel} | ${columns}x${rowsCount} (${totalCells} células)</small>
-                <small class="heatmap-batch-hint">Cada quadrado ≈ ${checksPerCellLabel}</small>
-            </div>
-        </div>
-        <div class="heatmap-stats">
-            <span class="heat-stat stat-low">Baixa: ${ok}</span>
-            <span class="heat-stat stat-medium">Média: ${warn}</span>
-            <span class="heat-stat stat-high">Alta: ${high}</span>
-            <span class="heat-stat stat-fail">Falha: ${fail}</span>
-            <span class="heat-stat stat-none">Sem coleta: ${noDataRaw}</span>
-        </div>
-        <div class="heatmap-time-axis">
-            <small>Check mais velho: ${oldestTs}</small>
-            <small>Check mais novo: ${newestTs}</small>
-        </div>
-        <div class="heatmap-grid-wrap">
-            <div class="heatmap-grid">
-    `;
-
-    for (let idx = 0; idx < displayBuckets.length; idx += 1) {
-        const item = displayBuckets[idx];
-        let cls = "heat-none";
-        let title = "Sem check nessa faixa de tempo";
-
-        if (item.checks > 0 || item.filledFromPrevious) {
-            if (bucketHasRealFailure(item)) {
-                cls = "heat-fail";
-            } else if (item.dominantLatencyLevel >= 2) {
-                cls = "heat-high";
-            } else if (item.dominantLatencyLevel >= 1) {
-                cls = "heat-medium";
-            } else {
-                cls = "heat-low";
-            }
-
-            const startLabel = formatDateTime(item.startTs);
-            const endLabel = formatDateTime(item.endTs);
-            const latencyLabel = item.dominantAvgLatency !== null
-                ? `${item.dominantAvgLatency.toFixed(1)} ms`
-                : "N/A";
-
-            const dominantLabel = item.dominantType ? item.dominantType.toUpperCase() : "N/A";
-            const icmpBlockedHint = (
-                item.pingFailCount > 0 &&
-                (item.tcpSuccessCount > 0 || item.httpSuccessCount > 0) &&
-                item.tcpFailCount === 0 &&
-                item.httpFailCount === 0
-            );
-            const perTypeSummary = `PING ${item.pingSuccessCount}/${item.pingChecks} (falha:${item.pingFailCount}) | TCP ${item.tcpSuccessCount}/${item.tcpChecks} (falha:${item.tcpFailCount}) | HTTP ${item.httpSuccessCount}/${item.httpChecks} (falha:${item.httpFailCount}) | DNS ${item.dnsSuccessCount}/${item.dnsChecks} (falha:${item.dnsFailCount})`;
-
-            title = item.filledFromPrevious
-                ? `Intervalo sem nova coleta | Estado visual mantido | Tipo base: ${dominantLabel} | Latência base: ${latencyLabel} | ${perTypeSummary}${icmpBlockedHint ? " | ICMP possivelmente bloqueado" : ""} | ${startLabel} até ${endLabel}`
-                : `Tipo dominante: ${dominantLabel} | Bucket: ${item.checks} checks | OK: ${item.successCount} | Falha: ${item.failCount} | Latência média dominante: ${latencyLabel} | ${perTypeSummary}${icmpBlockedHint ? " | ICMP possivelmente bloqueado" : ""} | ${startLabel} até ${endLabel}`;
-        }
-
-        const oldestClass = idx === oldestIdx ? "is-oldest" : "";
-        const newestClass = idx === newestIdx ? "is-newest" : "";
-        const filledClass = item.filledFromPrevious ? "is-filled" : "";
-
-        html += `<div class="heat-cell ${cls} ${oldestClass} ${newestClass} ${filledClass}" title="${title}"></div>`;
-    }
-
-    html += `</div></div>
-        <div class="heatmap-legend">
-            <span title="Latência dentro do aceitável para o tipo dominante"><i class="legend-dot heat-low"></i> Bom</span>
-            <span title="Latência em atenção para o tipo dominante"><i class="legend-dot heat-medium"></i> Atenção</span>
-            <span title="Latência ruim para o tipo dominante"><i class="legend-dot heat-high"></i> Ruim</span>
-            <span title="Falha real de HTTP/TCP/DNS, ou ping sozinho falhando"><i class="legend-dot heat-fail"></i> Falha</span>
-            <span title="Sem coleta nesse intervalo"><i class="legend-dot heat-none"></i> Sem coleta</span>
-            <span title="Intervalo sem nova coleta, mantendo o último estado visual"><i class="legend-dot legend-maintained"></i> Estado mantido</span>
-            <span title="Borda clara = bucket mais velho"><i class="legend-dot legend-oldest"></i> Mais velho</span>
-            <span title="Borda escura = bucket mais novo"><i class="legend-dot legend-newest"></i> Mais novo</span>
-        </div>
-    `;
-
-    container.innerHTML = html;
-}
-
 async function loadAvailabilityChartType(name) {
 
     const res = await fetchWithAuth(`${API}/hosts/metrics/availability/type/${name}`);
@@ -1505,15 +1022,13 @@ async function loadAvailabilityChartType(name) {
 
     const data = await res.json();
 
-    const ping = data.ping || [];
-    const tcp  = data.tcp || [];
-    const http = data.http || [];
+    const ping = takeLast(data.ping || []);
+    const tcp  = takeLast(data.tcp || []);
+    const http = takeLast(data.http || []);
 
     const base = ping.length ? ping : (tcp.length ? tcp : http);
 
-    const labels = base.map(p =>
-        new Date(p.timestamp).toLocaleTimeString()
-    );
+    const labels = base.map(p => formatApiTime(p.timestamp));
 
     const pingValues = ping.map(p => p.availability);
     const tcpValues  = tcp.map(p => p.availability);
@@ -1569,55 +1084,52 @@ async function loadAvailabilityChartType(name) {
     });
 }
 
+function formatStatusLabel(status) {
+    const normalized = String(status || "").toUpperCase();
+    if (normalized === "UP" || normalized === "UP_RECOVERED") return "Online";
+    if (normalized === "DOWN") return "Offline";
+    if (normalized === "DEGRADED") return "Degradado";
+    if (normalized === "CRITICAL") return "Crítico";
+    if (normalized === "UNKNOWN") return "Desconhecido";
+    return status ?? "Desconhecido";
+}
+
+function alertSeverityClass(severity) {
+    const normalized = String(severity || "").toUpperCase();
+    if (normalized === "HEALTHY") return "alert-sev-healthy";
+    if (normalized === "WARNING") return "alert-sev-warning";
+    if (normalized === "DEGRADED") return "alert-sev-degraded";
+    if (normalized === "CRITICAL") return "alert-sev-critical";
+    return "alert-sev-unknown";
+}
+
 function showAlertCard(alert) {
     const box = document.getElementById("alert-container");
     if (!box) return;
 
     const card = document.createElement("div");
-    card.className = "alert-card";
+    card.className = `alert-card ${alertSeverityClass(alert.severity)}`;
 
-    if (alert.new_status === "DOWN") 
-        card.classList.add("alert-down");
-
-    else if (alert.new_status === "UP") 
-        card.classList.add("alert-up");
-
-    else 
-        card.classList.add("alert-degraded");
-
-    const severityClass = (() => {
-        if (alert.severity === "HEALTHY") return "sev-healthy";
-        if (alert.severity === "WARNING") return "sev-warning";
-        if (alert.severity === "DEGRADED") return "sev-degraded";
-        if (alert.severity === "CRITICAL") return "sev-critical";
-        return "sev-unknown";
-    })();
+    const fromValue = alert.old_status ?? "N/A";
+    const toValue = alert.new_status ?? "N/A";
+    const fromLabel = formatStatusLabel(fromValue);
+    const toLabel = formatStatusLabel(toValue);
+    const transitionText = `${fromLabel} → ${toLabel}`;
+    const rawTransitionText = `${fromValue} → ${toValue}`;
+    const showRawTransition = String(fromValue).includes(".") || String(toValue).includes(".") || String(alert.alert_type || "").toUpperCase() === "DNS_CHANGE";
 
     card.innerHTML = `
         <div class="alert-header">
             <strong>${alert.host_name}</strong>
-            <span class="alert-status">${alert.old_status} → ${alert.new_status}</span>
+        </div>
+        <div class="alert-subtitle">
+            ${showRawTransition ? rawTransitionText : transitionText}
         </div>
         <div class="alert-subtitle">
             ${alert.host_address}${alert.host_port ? `:${alert.host_port}` : ""} | ${alert.alert_type ?? "STATUS_CHANGE"}
         </div>
         <div class="alert-subtitle">
-            ${new Date(alert.timestamp).toLocaleString()}
-        </div>
-
-        <div class="alert-section">
-            <small>Severidade: <span class="${severityClass}">${alert.severity ?? "UNKNOWN"}</span></small><br>
-            <small>Saúde: ${formatMetric(alert.health_score, "%", 0)}</small><br>
-            <small>Disponibilidade (10m): ${formatMetric(alert.availability_10m, "%")}</small><br>
-            <small><b>Causa provável:</b> ${alert.probable_cause ?? "Operação normal"}</small>
-        </div>
-
-        <div class="alert-section">
-            <small class="${metricClass(alert.cpu_usage)}">CPU: ${formatMetric(alert.cpu_usage, "%")}</small> |
-            <small class="${metricClass(alert.ram_usage)}">RAM: ${formatMetric(alert.ram_usage, "%")}</small> |
-            <small class="${metricClass(alert.disk_usage, 85, 95)}">Disco: ${formatMetric(alert.disk_usage, "%")}</small><br>
-            <small>Download (RX): ${formatBps(alert.network_in_bps)}</small> |
-            <small>Upload (TX): ${formatBps(alert.network_out_bps)}</small>
+            ${formatApiDateTime(alert.timestamp)}
         </div>
     `;
 
@@ -1627,6 +1139,68 @@ function showAlertCard(alert) {
         card.remove();
     }, 12000);
 }
+
+function triggerAllFrontendAlerts() {
+    const nowIso = new Date().toISOString();
+    const samples = [
+        {
+            host_name: "youtube",
+            host_address: "youtube.com",
+            host_port: 443,
+            alert_type: "DNS_CHANGE",
+            old_status: "172.217.29.174",
+            new_status: "['172.217.30.142']",
+            severity: "HEALTHY",
+            timestamp: nowIso
+        },
+        {
+            host_name: "ifnmg",
+            host_address: "ifnmg.edu.br",
+            host_port: 443,
+            alert_type: "DNS_TTL_LOW",
+            old_status: "ttl",
+            new_status: "45",
+            severity: "WARNING",
+            timestamp: nowIso
+        },
+        {
+            host_name: "google",
+            host_address: "google.com",
+            host_port: 443,
+            alert_type: "STATUS_CHANGE",
+            old_status: "UP",
+            new_status: "DEGRADED",
+            severity: "DEGRADED",
+            timestamp: nowIso
+        },
+        {
+            host_name: "Meu PC",
+            host_address: "192.168.0.10",
+            host_port: 80,
+            alert_type: "HEALTH_CRITICAL",
+            old_status: "DEGRADED",
+            new_status: "DOWN",
+            severity: "CRITICAL",
+            timestamp: nowIso
+        },
+        {
+            host_name: "gateway",
+            host_address: "10.0.0.1",
+            host_port: null,
+            alert_type: "UP_RECOVERED",
+            old_status: "DOWN",
+            new_status: "UP_RECOVERED",
+            severity: "HEALTHY",
+            timestamp: nowIso
+        }
+    ];
+
+    samples.forEach((sample, idx) => {
+        setTimeout(() => showAlertCard(sample), idx * 450);
+    });
+}
+
+window.triggerAllFrontendAlerts = triggerAllFrontendAlerts;
 
 let lastAlertTime = null;
 
@@ -1690,8 +1264,9 @@ async function loadAvailability(name) {
 
         const data = await response.json();
 
-        const labels = data.map(p => new Date(p.timestamp).toLocaleTimeString());
-        const values = data.map(p => p.availability);
+        const limited = takeLast(data);
+        const labels = limited.map(p => formatApiTime(p.timestamp));
+        const values = limited.map(p => p.availability);
 
         const chartKey = `availability-${name}`;
 
@@ -1719,11 +1294,7 @@ async function loadAvailability(name) {
                 }]
             },
             options: {
-                ...chartCommonOptions(null, null, "Disponibilidade (%)"),
-                plugins: {
-                    ...chartCommonOptions(null, null, "Disponibilidade (%)").plugins,
-                    legend: { display: false }
-                }
+                ...chartCommonOptions(null, null, "Disponibilidade (%)")
             }
         });
     } catch (err) {
@@ -1744,7 +1315,7 @@ async function loadTimeline() {
         container.innerHTML = incidents.map(inc => {
             const isClosed = inc.status === "CLOSED";
             const itemClass = isClosed ? "text-success" : "text-danger";
-            const timeStr = new Date(inc.started_time).toLocaleString();
+            const timeStr = formatApiDateTime(inc.started_time);
             const durationStr = inc.duration ? `(Duração: ${(inc.duration / 60).toFixed(1)} min)` : "(Ainda aberto)";
 
             return `
@@ -1770,18 +1341,6 @@ async function loadDashboardSummary() {
     if (!res || !res.ok) return;
 
     const data = await res.json();
-    let topCpuRamText = "N/A";
-    if (data.top_cpu_host && data.top_ram_host) {
-        if (data.top_cpu_host.host === data.top_ram_host.host) {
-            topCpuRamText = `${data.top_cpu_host.host} CPU: ${data.top_cpu_host.value}% | RAM: ${data.top_ram_host.value}%`;
-        } else {
-            topCpuRamText = `${data.top_cpu_host.host} CPU: ${data.top_cpu_host.value}% | ${data.top_ram_host.host} RAM: ${data.top_ram_host.value}%`;
-        }
-    } else if (data.top_cpu_host) {
-        topCpuRamText = `${data.top_cpu_host.host} CPU: ${data.top_cpu_host.value}% | RAM: N/A`;
-    } else if (data.top_ram_host) {
-        topCpuRamText = `${data.top_ram_host.host} CPU: N/A | RAM: ${data.top_ram_host.value}%`;
-    }
 
     box.innerHTML = `
         <div class="summary-card">
@@ -1789,7 +1348,7 @@ async function loadDashboardSummary() {
             <strong>${data.total_hosts ?? 0}</strong>
         </div>
         <div class="summary-card">
-            <small>UP</small>
+            <small>Online</small>
             <strong>${data.up ?? 0}</strong>
         </div>
         <div class="summary-card">
@@ -1797,7 +1356,7 @@ async function loadDashboardSummary() {
             <strong>${data.degraded ?? 0}</strong>
         </div>
         <div class="summary-card">
-            <small>DOWN</small>
+            <small>Offline</small>
             <strong>${data.down ?? 0}</strong>
         </div>
         <div class="summary-card">
@@ -1805,16 +1364,8 @@ async function loadDashboardSummary() {
             <strong>${data.open_incidents ?? 0}</strong>
         </div>
         <div class="summary-card">
-            <small>Saúde média</small>
-            <strong>${data.average_health != null ? `${data.average_health}%` : "N/A"}</strong>
-        </div>
-        <div class="summary-card summary-card-wide">
-            <small>Pior latência</small>
-            <strong>${data.worst_latency_host ? `${data.worst_latency_host.host} (${data.worst_latency_host.value_ms} ms)` : "N/A"}</strong>
-        </div>
-        <div class="summary-card summary-card-wide">
-            <small>Maior CPU / RAM</small>
-            <strong>${topCpuRamText}</strong>
+            <small>Incidentes fechados</small>
+            <strong>${data.closed_incidents ?? 0}</strong>
         </div>
     `;
 }
@@ -1844,21 +1395,23 @@ function filterHosts() {
 // Inicialização e Loop
 // ======================
 
-setInterval(loadHostsQuick, 5000);
-setInterval(loadTimeline, 15000);
-setInterval(checkAlerts, 5000);
-setInterval(loadDashboardSummary, 10000);
+if (!isLoginPage) {
+    setInterval(loadHostsQuick, 5000);
+    setInterval(loadTimeline, 15000);
+    setInterval(checkAlerts, 5000);
+    setInterval(loadDashboardSummary, 10000);
 
-const refreshBtn = document.getElementById("refreshBtn");
-if (refreshBtn) {
-    refreshBtn.addEventListener("click", loadHosts);
+    const refreshBtn = document.getElementById("refreshBtn");
+    if (refreshBtn) {
+        refreshBtn.addEventListener("click", loadHosts);
+    }
+
+    window.onload = () => {
+        loadDashboardSummary();
+        loadHosts();
+        loadTimeline();
+    };
 }
-
-window.onload = () => {
-    loadDashboardSummary();
-    loadHosts();
-    loadTimeline();
-};
 
 window.onclick = function(event) {
         const modal = document.getElementById("editModal");

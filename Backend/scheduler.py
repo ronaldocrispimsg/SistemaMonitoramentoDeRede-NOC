@@ -6,74 +6,28 @@ from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached, http_check
 from Backend.metrics import apply_preventive_logic, calc_jitter_http, calc_jitter_ping, calc_jitter_tcp, calc_sla_rolling_http, calc_sla_rolling_ping, calc_sla_rolling_tcp, max_severity, refine_severity, compute_health, calc_latency_trend_ping, classify_trend, calc_latency_trend_http, classify_trend_http
-from Backend.notifications import send_telegram_alert
-from Backend.snmp_engine import update_host_snmp
+from Backend.notifications import (
+    send_telegram_alert,
+    build_dns_ttl_low_message,
+    build_dns_change_message,
+    build_health_critical_message,
+    build_failure_confirmed_message,
+    build_recovery_message,
+    build_preventive_alert_message,
+)
+from Backend.snmp_engine import (
+    update_host_snmp,
+    snmp_has_usable_data,
+    can_attempt_snmp,
+    register_snmp_success,
+    register_snmp_failure,
+)
 from Backend.utils import close_incident, consecutive_failures, open_incident
 
 scheduler = BackgroundScheduler()
 
 ALERT_FAIL_THRESHOLD = 2
 ALERT_RECOVER_THRESHOLD = 1
-SNMP_BURST_FAIL_LIMIT = 3
-SNMP_BACKOFF_BASE_SECONDS = 300
-SNMP_BACKOFF_MAX_SECONDS = 3600
-SNMP_BACKOFF_STATE = {}
-
-
-def _snmp_has_usable_data(snmp_data):
-    if not isinstance(snmp_data, dict):
-        return False
-
-    if any(snmp_data.get(key) is not None for key in ("cpu", "ram", "disk")):
-        return True
-
-    network = snmp_data.get("network")
-    if isinstance(network, dict):
-        return any(network.get(k) is not None for k in ("in_octets", "out_octets", "in_bps", "out_bps"))
-
-    return False
-
-
-def _get_snmp_state(host_id):
-    if host_id not in SNMP_BACKOFF_STATE:
-        SNMP_BACKOFF_STATE[host_id] = {
-            "failures_in_burst": 0,
-            "backoff_level": 0,
-            "pause_until": None,
-        }
-    return SNMP_BACKOFF_STATE[host_id]
-
-
-def _can_attempt_snmp(host_id):
-    state = _get_snmp_state(host_id)
-    pause_until = state["pause_until"]
-    if pause_until and datetime.utcnow() < pause_until:
-        return False
-    return True
-
-
-def _register_snmp_success(host_id):
-    state = _get_snmp_state(host_id)
-    state["failures_in_burst"] = 0
-    state["backoff_level"] = 0
-    state["pause_until"] = None
-
-
-def _register_snmp_failure(host_id, host_name):
-    state = _get_snmp_state(host_id)
-    state["failures_in_burst"] += 1
-
-    if state["failures_in_burst"] < SNMP_BURST_FAIL_LIMIT:
-        return
-
-    level = max(state["backoff_level"], 0)
-    wait_seconds = min(SNMP_BACKOFF_BASE_SECONDS * (2 ** level), SNMP_BACKOFF_MAX_SECONDS)
-    state["pause_until"] = datetime.utcnow() + timedelta(seconds=wait_seconds)
-    state["failures_in_burst"] = 0
-
-    state["backoff_level"] += 1
-
-    print(f"[SNMP BACKOFF] {host_name}: pausado por {wait_seconds}s")
 
 def check_all_hosts():
 
@@ -117,6 +71,9 @@ def check_all_hosts():
                             old_status="ttl",
                             new_status=str(ttl)
                         ))
+                        send_telegram_alert(
+                            build_dns_ttl_low_message(host, host.address, ttl, datetime.utcnow())
+                        )
                         host.last_ttl_alert = datetime.utcnow()
 
                 # =====================
@@ -164,12 +121,16 @@ def check_all_hosts():
                 ip = ips[index]
 
                 if host.last_resolved_ip and host.last_resolved_ip not in ips:
+                    old_ip = host.last_resolved_ip
                     db.add(Alert(
                         host_id=host.id,
                         alert_type="DNS_CHANGE",
-                        old_status=host.last_resolved_ip,
+                        old_status=old_ip,
                         new_status=str(ips)
                     ))
+                    send_telegram_alert(
+                        build_dns_change_message(host, host.address, old_ip, str(ips), datetime.utcnow())
+                    )
 
                 host.last_resolved_ip = ip
 
@@ -218,6 +179,9 @@ def check_all_hosts():
                         old_status=old_status,
                         new_status=f"score={score}"
                     ))
+                    send_telegram_alert(
+                        build_health_critical_message(host, "health_score", score, datetime.utcnow())
+                    )
 
                 # =====================
                 # STATUS ENGINE (CORRETO)
@@ -283,6 +247,15 @@ def check_all_hosts():
                             old_status=old_status,
                             new_status=new_status
                         ))
+                        send_telegram_alert(
+                            build_failure_confirmed_message(
+                                host,
+                                old_status,
+                                new_status,
+                                host.fail_streak,
+                                datetime.utcnow()
+                            )
+                        )
 
                     elif new_status == "UP" and host.success_streak >= ALERT_RECOVER_THRESHOLD:
                         db.add(Alert(
@@ -290,6 +263,9 @@ def check_all_hosts():
                             old_status=old_status,
                             new_status="UP_RECOVERED"
                         ))
+                        send_telegram_alert(
+                            build_recovery_message(host, old_status, datetime.utcnow())
+                        )
 
                 host.last_check = datetime.utcnow()
 
@@ -357,17 +333,17 @@ def check_all_hosts():
                 snmp_data = None
 
                 if host.status == "UP":
-                    if _can_attempt_snmp(host.id):
+                    if can_attempt_snmp(host.id):
                         try:
                             snmp_data = update_host_snmp(host, db)
                         except Exception as e:
                             print(f"[SNMP ERROR] {host.name}: {e}")
-                            _register_snmp_failure(host.id, host.name)
+                            register_snmp_failure(host.id, host.name)
                         else:
-                            if _snmp_has_usable_data(snmp_data):
-                                _register_snmp_success(host.id)
+                            if snmp_has_usable_data(snmp_data):
+                                register_snmp_success(host.id)
                             else:
-                                _register_snmp_failure(host.id, host.name)
+                                register_snmp_failure(host.id, host.name)
 
                 preventive_severity, preventive_reasons = apply_preventive_logic(host, snmp_data)
 
@@ -391,15 +367,28 @@ def check_all_hosts():
                         not host.last_preventive_alert or
                         datetime.utcnow() - host.last_preventive_alert > timedelta(minutes=30)
                     ):
-                        reason_text = ", ".join(preventive_reasons[:4]) if preventive_reasons else "Risco detectado"
+                        severity_labels = {
+                            "WARNING": "Atenção",
+                            "DEGRADED": "Degradado",
+                            "CRITICAL": "Crítico",
+                        }
+                        condition_text = preventive_reasons[0] if preventive_reasons else "Risco preventivo detectado"
+                        extra_reasons = ", ".join(preventive_reasons[1:4]) if len(preventive_reasons) > 1 else None
+                        severity_text = severity_labels.get(host.severity, host.severity)
+                        details_lines = []
+                        if extra_reasons:
+                            details_lines.append(extra_reasons)
+                        details_lines.append(f"Severidade: {severity_text}")
+                        details_lines.append(f"Score: {host.health_score}")
+                        details_text = "\n".join(details_lines)
 
                         send_telegram_alert(
-                            f"⚠️ <b>Alerta Preventivo</b>\n"
-                            f"Host: {host.name}\n"
-                            f"Endereço: {host.address}\n"
-                            f"Severidade: {host.severity}\n"
-                            f"Motivos: {reason_text}\n"
-                            f"Score: {host.health_score}"
+                            build_preventive_alert_message(
+                                host,
+                                condition_text,
+                                details_text,
+                                datetime.utcnow()
+                            )
                         )
 
                         host.last_preventive_alert = datetime.utcnow()
@@ -449,9 +438,10 @@ def start_scheduler():
     scheduler.add_job(
         check_all_hosts,
         "interval",
-        seconds=5,
+        seconds=20,
         id="check_hosts_job",
-        replace_existing=True
+        replace_existing=True,
+        max_instances=1
     )
 
     # Tarefa de limpeza (roda a cada 1 hora)

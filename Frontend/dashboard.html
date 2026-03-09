@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta charset="UTF-8">
+<title>NOC Lite - Dashboard</title>
+
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+<div class="container">
+<div class="dashboard-hero">
+    <div class="dashboard-hero-top">
+        <div class="hero-copy">
+            <h1>Dashboard</h1>
+        </div>
+        <div class="top-actions top-actions-hero">
+            <button id="changePasswordBtn">Alterar Senha</button>
+            <button id="logoutBtn">Sair do Sistema</button>
+        </div>
+    </div>
+</div>
+
+<section class="panel-section">
+    <article class="overview-card">
+        <h2>Resumo da Rede</h2>
+        <div id="dashboardSummary" class="summary-grid"></div>
+    </article>
+</section>
+
+<section class="panel-section">
+    <article class="overview-card">
+        <h2>Cadastrar Host</h2>
+        <form id="hostForm">
+            <input id="name" placeholder="Nome" required>
+            <input id="address" placeholder="Endereço/IP" required>
+            <input id="port" type="number" min="1" max="65535" placeholder="Porta" required>
+            <input id="http_url" placeholder="URL HTTP (opcional)">
+            <button type="submit">Cadastrar</button>
+        </form>
+    </article>
+</section>
+
+<section class="panel-section">
+      <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="Filtrar por nome ou IP..." onkeyup="filterHosts()">
+        <select id="statusFilter" onchange="filterHosts()">
+            <option value="all">Todos os Status</option>
+            <option value="bg-success">Online</option>
+            <option value="bg-danger">Offline</option>
+            <option value="bg-warning">Degradado</option>
+        </select>
+    </div>
+    <div class="hosts-toolbar">
+      <h2>Hosts</h2>
+      <button id="refreshBtn">Atualizar Lista</button>
+    </div>
+    <div id="hosts"></div>
+</section>
+
+    <div id="alert-container"></div>
+
+<div id="editModal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Editar Host</h3>
+
+    <input id="modal-name" disabled>
+    <input id="modal-ip">
+    <input id="modal-port">
+    <input id="modal-http-url">
+
+    <div class="modal-actions">
+      <button onclick="submitModalEdit()">Salvar</button>
+      <button onclick="closeModal()">Cancelar</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="changePwdModal" class="modal hidden">
+  <div class="modal-content">
+
+    <h3>Alterar Senha</h3>
+
+    <input id="current-pwd" type="password" placeholder="Senha atual">
+    <input id="new-pwd" type="password" placeholder="Nova senha">
+    <input id="confirm-pwd" type="password" placeholder="Confirmar nova senha">
+
+    <div class="modal-actions">
+      <button onclick="changePassword()">Alterar</button>
+      <button onclick="closeChangePwdModal()">Cancelar</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="timeline-container panel-section">
+    <h3>Histórico de Incidentes Recentes</h3>
+    <div id="incidentTimeline" class="timeline">
+        </div>
+</div>
+</div>
+</body>
+<script src="app.js"></script>
+</html>
