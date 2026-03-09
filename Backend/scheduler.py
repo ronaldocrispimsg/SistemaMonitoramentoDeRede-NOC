@@ -162,12 +162,21 @@ def check_all_hosts():
                 # =====================
                 # STATUS ENGINE (CORRETO)
                 # =====================
+                service_up_without_icmp = (
+                    not ping_result["success"] and (
+                        (tcp_result is not None and tcp_result.get("success")) or
+                        (http_result is not None and http_result.get("success"))
+                    )
+                )
 
                 if http_result and http_result.get("status_code") and 500 <= http_result["status_code"] < 600:
                     new_status = "CRITICAL"
 
                 elif http_result and not http_result["success"]:
                     new_status = "DEGRADED"
+
+                elif http_result and http_result["success"]:
+                    new_status = "UP"
                 
                 elif not ping_result["success"] and not tcp_result:
                     new_status = "DOWN"
@@ -176,7 +185,7 @@ def check_all_hosts():
                     new_status = "UP"
 
                 elif not ping_result["success"] and tcp_result and tcp_result["success"]:
-                    new_status = "UP"  # Condicao para ICMP bloqueado, gov.br ou site do if
+                    new_status = "UP"
 
                 elif tcp_result and not tcp_result["success"]:
                     new_status = "DEGRADED"
@@ -204,8 +213,11 @@ def check_all_hosts():
                 # ALERTAS TRANSIÇÃO
                 # =====================
                 if old_status and old_status != new_status:
+                    # Evita alerta ruidoso quando ICMP é bloqueado, mas serviço principal está OK.
+                    if service_up_without_icmp and new_status == "UP":
+                        pass
 
-                    if new_status != "UP" and host.fail_streak >= ALERT_FAIL_THRESHOLD:
+                    elif new_status != "UP" and host.fail_streak >= ALERT_FAIL_THRESHOLD:
                         db.add(Alert(
                             host_id=host.id,
                             old_status=old_status,

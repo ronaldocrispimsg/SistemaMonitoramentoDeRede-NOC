@@ -532,6 +532,13 @@ function trendIcon(trend) {
     return "→";
 }
 
+function formatMetric(value, suffix = "", digits = 2) {
+    if (value === null || value === undefined) return "N/A";
+    const num = Number(value);
+    if (Number.isNaN(num)) return "N/A";
+    return `${num.toFixed(digits)}${suffix}`;
+}
+
 async function submitModalEdit() {
     const newName = document.getElementById("modal-name").value;
     const newIp = document.getElementById("modal-ip").value;
@@ -815,6 +822,7 @@ async function loadAvailabilityChartType(name) {
 
 function showAlertCard(alert) {
     const box = document.getElementById("alert-container");
+    if (!box) return;
 
     const card = document.createElement("div");
     card.className = "alert-card";
@@ -828,16 +836,47 @@ function showAlertCard(alert) {
     else 
         card.classList.add("alert-degraded");
 
+    const severityClass = (() => {
+        if (alert.severity === "HEALTHY") return "sev-healthy";
+        if (alert.severity === "WARNING") return "sev-warning";
+        if (alert.severity === "DEGRADED") return "sev-degraded";
+        if (alert.severity === "CRITICAL") return "sev-critical";
+        return "sev-unknown";
+    })();
+
     card.innerHTML = `
-        <strong>${alert.host_name}</strong><br>
-        ${alert.old_status} → ${alert.new_status}
+        <div class="alert-header">
+            <strong>${alert.host_name}</strong>
+            <span class="alert-status">${alert.old_status} → ${alert.new_status}</span>
+        </div>
+        <div class="alert-subtitle">
+            ${alert.host_address}${alert.host_port ? `:${alert.host_port}` : ""} | ${alert.alert_type ?? "STATUS_CHANGE"}
+        </div>
+        <div class="alert-subtitle">
+            ${new Date(alert.timestamp).toLocaleString()}
+        </div>
+
+        <div class="alert-section">
+            <small>Severidade: <span class="${severityClass}">${alert.severity ?? "UNKNOWN"}</span></small><br>
+            <small>Saúde: ${formatMetric(alert.health_score, "%", 0)}</small><br>
+            <small>Disponibilidade (10m): ${formatMetric(alert.availability_10m, "%")}</small><br>
+            <small><b>Causa provável:</b> ${alert.probable_cause ?? "Operação normal"}</small>
+        </div>
+
+        <div class="alert-section">
+            <small class="${metricClass(alert.cpu_usage)}">CPU: ${formatMetric(alert.cpu_usage, "%")}</small> |
+            <small class="${metricClass(alert.ram_usage)}">RAM: ${formatMetric(alert.ram_usage, "%")}</small> |
+            <small class="${metricClass(alert.disk_usage, 85, 95)}">Disco: ${formatMetric(alert.disk_usage, "%")}</small><br>
+            <small>Download (RX): ${formatBps(alert.network_in_bps)}</small> |
+            <small>Upload (TX): ${formatBps(alert.network_out_bps)}</small>
+        </div>
     `;
 
     box.appendChild(card);
 
     setTimeout(() => {
         card.remove();
-    }, 6000);
+    }, 12000);
 }
 
 let lastAlertTime = null;

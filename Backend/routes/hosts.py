@@ -272,9 +272,9 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
     return {"detail": "Host atualizado com sucesso"}
 
 @router.get("/alerts/list")
-def list_alerts(db: Session = Depends(get_db)):
+def list_alerts(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     rows = (
-        db.query(Alert, Host.name)
+        db.query(Alert, Host)
         .join(Host, Host.id == Alert.host_id)
         .order_by(Alert.timestamp.desc())
         .limit(50)
@@ -282,13 +282,39 @@ def list_alerts(db: Session = Depends(get_db)):
     )
 
     result = []
-    for alert, host_name in rows:
+    for alert, host in rows:
+        availability_10m = availability_last_10_min(db, host.name)
+        probable_cause = infer_probable_cause(db, host)
+
         result.append({
             "host_id": alert.host_id,
-            "host_name": host_name,
+            "host_name": host.name,
+            "host_address": host.address,
+            "host_port": host.port,
+            "alert_type": alert.alert_type,
             "old_status": alert.old_status,
             "new_status": alert.new_status,
-            "timestamp": alert.timestamp.isoformat()
+            "timestamp": alert.timestamp.isoformat(),
+            "status": host.status,
+            "severity": host.severity,
+            "health_score": host.health_score,
+            "availability_10m": availability_10m,
+            "sla_rolling_ping": host.sla_rolling_ping,
+            "sla_rolling_tcp": host.sla_rolling_tcp,
+            "sla_rolling_http": host.sla_rolling_http,
+            "jitter_ms_ping": host.jitter_ms_ping,
+            "jitter_ms_tcp": host.jitter_ms_tcp,
+            "jitter_ms_http": host.jitter_ms_http,
+            "trend_http": host.trend_http,
+            "cpu_usage": host.cpu_usage,
+            "ram_usage": host.ram_usage,
+            "disk_usage": host.disk_usage,
+            "network_traffic": host.network_traffic,
+            "network_in_bps": host.network_in_bps,
+            "network_out_bps": host.network_out_bps,
+            "last_check": host.last_check.isoformat() if host.last_check else None,
+            "last_snmp_check": host.last_snmp_check.isoformat() if host.last_snmp_check else None,
+            "probable_cause": probable_cause,
         })
 
     return result
