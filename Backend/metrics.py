@@ -3,12 +3,24 @@ from Backend.models import CheckResult, Incident
 
 def compute_health(ping_result, tcp_result, http_result):
     score = 0
+    icmp_blocked_like = (
+        not ping_result["success"] and (
+            (tcp_result is not None and tcp_result.get("success")) or
+            (http_result is not None and http_result.get("success"))
+        )
+    )
+
+    ping_effective_success = ping_result["success"] or icmp_blocked_like
+    ping_effective_latency = ping_result.get("latency")
+    if ping_effective_latency is None and icmp_blocked_like:
+        # Não há RTT ICMP real quando firewall bloqueia; usa valor neutro para não penalizar saúde.
+        ping_effective_latency = 80
 
     # ---------- Ping ----------
-    if ping_result["success"]:
+    if ping_effective_success:
         score += 30
 
-        lat = ping_result.get("latency") or 9999
+        lat = ping_effective_latency or 9999
         if lat < 100:
             score += 15
         elif lat < 300:
@@ -17,9 +29,6 @@ def compute_health(ping_result, tcp_result, http_result):
     # ---------- TCP ----------
     if tcp_result and tcp_result["success"]:
         score += 30
-
-    elif not ping_result["success"] and tcp_result and tcp_result["success"]:
-        score += 30  # serviço responde mas ICMP bloqueado
 
     # ---------- HTTP ----------
     if http_result:

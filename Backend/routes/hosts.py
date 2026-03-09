@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from Backend.database import get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User, SNMPMetric
@@ -565,69 +565,46 @@ def get_latest_incidents(db: Session = Depends(get_db), user: str = Depends(get_
     ]
 
 @router.get("/metrics/heatmap/{host_id}")
-def get_heatmap(host_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def get_heatmap(
+    host_id: int,
+    window_minutes: int = Query(10, ge=1, le=1440),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     host = db.query(Host).filter(Host.id == host_id).first()
 
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
 
-    # Escolhe o tipo mais "saudável" recentemente:
-    # maior taxa de sucesso e, em empate, menor latência média.
-    candidates = []
-    for check_type in ("ping", "tcp", "http"):
-        rows = (
-            db.query(CheckResult)
-            .filter(
-                CheckResult.host_id == host.id,
-                CheckResult.check_type == check_type
-            )
-            .order_by(CheckResult.timestamp.desc())
-            .limit(30)
-            .all()
-        )
-
-        if not rows:
-            continue
-
-        total = len(rows)
-        successes = sum(1 for r in rows if r.success)
-        success_rate = successes / total
-
-        latencies = [r.latency for r in rows if r.latency is not None]
-        avg_latency = sum(latencies) / len(latencies) if latencies else float("inf")
-
-        candidates.append((check_type, success_rate, avg_latency))
-
-    if candidates:
-        preferred_type = max(candidates, key=lambda item: (item[1], -item[2]))[0]
-    else:
-        preferred_type = "ping"
+    since = datetime.utcnow() - timedelta(minutes=window_minutes)
 
     results = (
         db.query(CheckResult)
         .filter(
             CheckResult.host_id == host.id,
-            CheckResult.check_type == preferred_type
+            CheckResult.check_type.in_(("ping", "tcp", "http", "dns")),
+            CheckResult.timestamp >= since
         )
-        .order_by(CheckResult.timestamp.desc())
-        .limit(100)
+        .order_by(CheckResult.timestamp.asc())
         .all()
     )
 
-    data = []
-    for r in results:
-        data.append({
+    data = [
+        {
             "check_type": r.check_type,
-            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "timestamp": r.timestamp.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z") if r.timestamp else None,
             "latency": r.latency,
             "success": r.success,
             "error": r.error
-        })
+        }
+        for r in results
+    ]
 
     return {
         "host_id": host.id,
         "host": host.name,
-        "check_type": preferred_type,
+        "check_type": "mixed",
+        "window_minutes": window_minutes,
         "data": data
     }
 

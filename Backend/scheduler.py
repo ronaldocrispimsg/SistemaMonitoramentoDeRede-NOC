@@ -436,7 +436,7 @@ def cleanup_old_data():
         hosts = db.query(Host).all()
         for host in hosts:
             for c_type in ["ping", "tcp", "http", "dns"]:
-                trim_history(db, host.id, c_type, limit=100)
+                trim_history(db, host.id, c_type, limit=30000)
         db.commit()
         print(f"[{datetime.now()}] Limpeza de histórico concluída.")
     except Exception as e:

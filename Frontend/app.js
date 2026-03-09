@@ -1,9 +1,33 @@
 const API = "http://127.0.0.1:8000";
 const charts = {};
-const HEATMAP_WINDOW_MINUTES = 10;
+const HEATMAP_WINDOW_PRESETS = [
+    { label: "30 min", minutes: 30 },
+    { label: "1 h", minutes: 60 },
+    { label: "2 h", minutes: 120 },
+    { label: "6 h", minutes: 360 },
+    { label: "12 h", minutes: 720 },
+    { label: "24 h", minutes: 1440 }
+];
+const storedHeatmapWindow = Number(localStorage.getItem("heatmap_window_minutes"));
+let HEATMAP_WINDOW_MINUTES = HEATMAP_WINDOW_PRESETS.some((preset) => preset.minutes === storedHeatmapWindow)
+    ? storedHeatmapWindow
+    : 30;
 const HEATMAP_COLUMNS = 20;
 const HEATMAP_ROWS = 10;
 const HEATMAP_TOTAL_CELLS = HEATMAP_COLUMNS * HEATMAP_ROWS;
+const HEATMAP_LATENCY_THRESHOLDS = {
+    ping: { warn: 80, high: 150 },
+    tcp: { warn: 150, high: 300 },
+    http: { warn: 600, high: 1000 },
+    dns: { warn: 0, high: 0 }
+};
+
+function getHeatmapUrl(hostId) {
+    const params = new URLSearchParams({
+        window_minutes: String(HEATMAP_WINDOW_MINUTES)
+    });
+    return `${API}/metrics/heatmap/${hostId}?${params.toString()}`;
+}
 
 if (Notification.permission !== "granted") {
     Notification.requestPermission();
@@ -459,7 +483,7 @@ async function loadHosts() {
                 const heatmapBox = document.getElementById(`heatmap-${h.id}`);
                 if (heatmapBox) {
                     heatmapBox.hidden = false;
-                    const resHeatmap = await fetchWithAuth(`${API}/metrics/heatmap/${h.id}`);
+                    const resHeatmap = await fetchWithAuth(getHeatmapUrl(h.id));
                     if (resHeatmap?.ok) {
                         const payload = await resHeatmap.json();
                         renderHeatmap(heatmapBox, payload, h.name);
@@ -532,14 +556,25 @@ async function loadLastResult(name) {
     const lastTcp  = data.checks.find(c => c.type === "tcp");
     const lastHttp = data.checks.find(c => c.type === "http");
 
-    const pingDot = lastPing?.success ? "bg-success" : "bg-danger";
+    const pingLikelyFirewallBlocked =
+        !!lastPing &&
+        !lastPing.success &&
+        ((!!lastTcp && lastTcp.success) || (!!lastHttp && lastHttp.success));
+
+    const pingDot = pingLikelyFirewallBlocked
+        ? "bg-secondary"
+        : (lastPing?.success ? "bg-success" : "bg-danger");
     const tcpDot  = lastTcp?.success ? "bg-success" : "bg-danger";
     const httpDot = lastHttp?.success ? "bg-success" : "bg-danger";
+
+    const pingLatencyText = pingLikelyFirewallBlocked
+        ? "N/A (Bloqueado pelo firewall)"
+        : `${lastPing?.latency ?? "N/A"} ms`;
 
     box.innerHTML = `
         <div>
             <span class="status-indicator ${pingDot}"></span>
-            Ping: ${lastPing?.latency ?? "N/A"} ms
+            Ping: ${pingLatencyText}
         </div>
         ${lastTcp ? `
         <div>
@@ -606,17 +641,48 @@ async function toggleHeatmap(hostId, hostName) {
     const box = document.getElementById(`heatmap-${hostId}`);
     if (!box) return;
 
+    box.dataset.hostName = hostName;
+    box.dataset.hostId = String(hostId);
+
     box.hidden = !box.hidden;
 
     if (box.hidden) return;
 
-    const res = await fetchWithAuth(`${API}/metrics/heatmap/${hostId}`);
-    if (!res) return;
+    const res = await fetchWithAuth(getHeatmapUrl(hostId));
+    if (!res || !res.ok) return;
 
     const data = await res.json();
-
     renderHeatmap(box, data, hostName);
 }
+
+async function refreshOpenHeatmaps() {
+    const openHeatmaps = document.querySelectorAll(".heatmap-box:not([hidden])");
+
+    for (const box of openHeatmaps) {
+        const hostId = box.dataset.hostId || String(box.id || "").replace("heatmap-", "");
+        if (!hostId) continue;
+
+        const hostName = box.dataset.hostName || "Host";
+        const res = await fetchWithAuth(getHeatmapUrl(hostId));
+        if (!res || !res.ok) continue;
+
+        const data = await res.json();
+        renderHeatmap(box, data, hostName);
+    }
+}
+
+async function updateHeatmapWindow(minutes) {
+    const parsed = Number(minutes);
+    const valid = HEATMAP_WINDOW_PRESETS.some((preset) => preset.minutes === parsed);
+    if (!valid) return;
+
+    HEATMAP_WINDOW_MINUTES = parsed;
+    localStorage.setItem("heatmap_window_minutes", String(parsed));
+
+    await refreshOpenHeatmaps();
+}
+
+window.updateHeatmapWindow = updateHeatmapWindow;
 
 async function toggleLatencyChart(name) {
     const container = document.getElementById("chart-container-" + name);
@@ -1038,13 +1104,27 @@ async function loadSnmpChart(name) {
     });
 }
 
+function parseBackendTimestampToMs(value) {
+    if (!value) return NaN;
+
+    // Se vier sem timezone, assume UTC
+    if (typeof value === "string" && !/[zZ]|[+\-]\d{2}:\d{2}$/.test(value)) {
+        return Date.parse(`${value}Z`);
+    }
+
+    return Date.parse(value);
+}
+
 function renderHeatmap(container, payload, hostName) {
+    container.dataset.hostName = hostName;
+
     const rows = Array.isArray(payload) ? payload : (payload?.data || []);
     const checkType = Array.isArray(payload) ? "auto" : (payload?.check_type || "auto");
     const totalCells = HEATMAP_TOTAL_CELLS;
     const columns = HEATMAP_COLUMNS;
     const rowsCount = HEATMAP_ROWS;
-    const timeWindowMs = HEATMAP_WINDOW_MINUTES * 60 * 1000;
+    const effectiveWindowMinutes = Number(payload?.window_minutes || HEATMAP_WINDOW_MINUTES);
+    const timeWindowMs = effectiveWindowMinutes * 60 * 1000;
 
     if (!rows.length) {
         container.innerHTML = "<p>Sem dados para heatmap.</p>";
@@ -1054,7 +1134,7 @@ function renderHeatmap(container, payload, hostName) {
     const rowsWithTs = rows
         .map((item) => ({
             ...item,
-            ts: Date.parse(item.timestamp)
+            ts: parseBackendTimestampToMs(item.timestamp)
         }))
         .filter((item) => !Number.isNaN(item.ts))
         .sort((a, b) => a.ts - b.ts);
@@ -1064,44 +1144,251 @@ function renderHeatmap(container, payload, hostName) {
         return;
     }
 
+    // ancora no último check real para evitar buckets vazios artificiais
     const latestTs = rowsWithTs[rowsWithTs.length - 1].ts;
-    const periodEnd = Math.max(Date.now(), latestTs);
+    const periodEnd = latestTs;
     const periodStart = periodEnd - timeWindowMs;
-    const windowRows = rowsWithTs.filter((item) => item.ts >= periodStart && item.ts <= periodEnd);
-    const compactRows = windowRows.slice(-totalCells);
-    const buckets = new Array(totalCells).fill(null);
-    const startOffset = totalCells - compactRows.length;
 
-    compactRows.forEach((item, idx) => {
-        buckets[startOffset + idx] = item;
+    const windowRows = rowsWithTs.filter(
+        (item) => item.ts >= periodStart && item.ts <= periodEnd
+    );
+
+    if (!windowRows.length) {
+        container.innerHTML = "<p>Sem checks na janela selecionada.</p>";
+        return;
+    }
+
+    const bucketSizeMs = timeWindowMs / totalCells;
+    function getLatencyLevelByType(type, latency) {
+        if (!Number.isFinite(latency)) return 0;
+
+        const normalizedType = String(type || "").toLowerCase();
+        const thresholds = HEATMAP_LATENCY_THRESHOLDS[normalizedType];
+
+        if (!thresholds) return 0;
+        if (normalizedType === "dns") return 0;
+
+        if (latency > thresholds.high) return 2;
+        if (latency > thresholds.warn) return 1;
+        return 0;
+    }
+
+    const realBuckets = Array.from({ length: totalCells }, (_, index) => {
+        const startTs = periodStart + index * bucketSizeMs;
+        const endTs = index === totalCells - 1
+            ? periodEnd
+            : periodStart + (index + 1) * bucketSizeMs;
+
+        return {
+            checks: 0,
+            successCount: 0,
+            failCount: 0,
+
+            pingChecks: 0,
+            pingSuccessCount: 0,
+            pingFailCount: 0,
+
+            tcpChecks: 0,
+            tcpSuccessCount: 0,
+            tcpFailCount: 0,
+
+            httpChecks: 0,
+            httpSuccessCount: 0,
+            httpFailCount: 0,
+
+            dnsChecks: 0,
+            dnsSuccessCount: 0,
+            dnsFailCount: 0,
+
+            pingLatencySum: 0,
+            pingLatencyCount: 0,
+            tcpLatencySum: 0,
+            tcpLatencyCount: 0,
+            httpLatencySum: 0,
+            httpLatencyCount: 0,
+
+            avgLatency: null, // média geral (apenas referência no tooltip)
+            dominantAvgLatency: null, // média usada para classificar cor
+            dominantLatencyLevel: 0,
+
+            dominantType: null,
+            dominantTypeCount: 0,
+
+            startTs,
+            endTs,
+            filledFromPrevious: false
+        };
     });
 
-    const filled = buckets.filter(Boolean);
+    for (const item of windowRows) {
+        let bucketIndex = Math.floor((item.ts - periodStart) / bucketSizeMs);
+
+        if (bucketIndex < 0) bucketIndex = 0;
+        if (bucketIndex >= totalCells) bucketIndex = totalCells - 1;
+
+        const bucket = realBuckets[bucketIndex];
+        bucket.checks += 1;
+
+        const type = String(item.check_type || "").toLowerCase();
+
+        if (type === "ping") {
+            bucket.pingChecks += 1;
+            if (item.success) bucket.pingSuccessCount += 1;
+            else bucket.pingFailCount += 1;
+        } else if (type === "tcp") {
+            bucket.tcpChecks += 1;
+            if (item.success) bucket.tcpSuccessCount += 1;
+            else bucket.tcpFailCount += 1;
+        } else if (type === "http") {
+            bucket.httpChecks += 1;
+            if (item.success) bucket.httpSuccessCount += 1;
+            else bucket.httpFailCount += 1;
+        } else if (type === "dns") {
+            bucket.dnsChecks += 1;
+            if (item.success) bucket.dnsSuccessCount += 1;
+            else bucket.dnsFailCount += 1;
+        }
+
+        if (item.success) {
+            bucket.successCount += 1;
+
+            const latency = Number(item.latency);
+            if (!Number.isNaN(latency) && type !== "dns") {
+                if (type === "ping") {
+                    bucket.pingLatencySum += latency;
+                    bucket.pingLatencyCount += 1;
+                } else if (type === "tcp") {
+                    bucket.tcpLatencySum += latency;
+                    bucket.tcpLatencyCount += 1;
+                } else if (type === "http") {
+                    bucket.httpLatencySum += latency;
+                    bucket.httpLatencyCount += 1;
+                }
+            }
+        } else {
+            bucket.failCount += 1;
+        }
+    }
+
+    for (const bucket of realBuckets) {
+        const totalLatencyCount = bucket.pingLatencyCount + bucket.tcpLatencyCount + bucket.httpLatencyCount;
+        const totalLatencySum = bucket.pingLatencySum + bucket.tcpLatencySum + bucket.httpLatencySum;
+        if (totalLatencyCount > 0) {
+            bucket.avgLatency = totalLatencySum / totalLatencyCount;
+        }
+
+        const pingAvg = bucket.pingLatencyCount > 0 ? (bucket.pingLatencySum / bucket.pingLatencyCount) : null;
+        const tcpAvg = bucket.tcpLatencyCount > 0 ? (bucket.tcpLatencySum / bucket.tcpLatencyCount) : null;
+        const httpAvg = bucket.httpLatencyCount > 0 ? (bucket.httpLatencySum / bucket.httpLatencyCount) : null;
+
+        const candidates = [
+            { type: "ping", checks: bucket.pingChecks, success: bucket.pingSuccessCount, avg: pingAvg },
+            { type: "tcp", checks: bucket.tcpChecks, success: bucket.tcpSuccessCount, avg: tcpAvg },
+            { type: "http", checks: bucket.httpChecks, success: bucket.httpSuccessCount, avg: httpAvg }
+        ].filter((candidate) => candidate.checks > 0);
+
+        let dominant = null;
+        if (candidates.length > 0) {
+            const typePriority = { tcp: 4, ping: 3, http: 2, dns: 1 };
+            const withNormalized = candidates.map((candidate) => {
+                const warn = HEATMAP_LATENCY_THRESHOLDS[candidate.type]?.warn || 1;
+                const normalized = Number.isFinite(candidate.avg) ? (candidate.avg / warn) : Number.POSITIVE_INFINITY;
+                return { ...candidate, normalized };
+            });
+
+            withNormalized.sort((a, b) => {
+                // 1) maior número de checks com sucesso
+                if (b.success !== a.success) return b.success - a.success;
+                // 2) menor latência normalizada
+                if (a.normalized !== b.normalized) return a.normalized - b.normalized;
+                // 3) prioridade fixa
+                return (typePriority[b.type] || 0) - (typePriority[a.type] || 0);
+            });
+
+            dominant = withNormalized[0];
+        } else if (bucket.dnsChecks > 0) {
+            // DNS só domina se não houver ping/tcp/http no bucket
+            dominant = { type: "dns", checks: bucket.dnsChecks, success: bucket.dnsSuccessCount, avg: null };
+        }
+
+        bucket.dominantType = dominant ? dominant.type : null;
+        bucket.dominantTypeCount = dominant ? dominant.checks : 0;
+        bucket.dominantAvgLatency = dominant ? dominant.avg : null;
+
+        bucket.dominantLatencyLevel = getLatencyLevelByType(
+            bucket.dominantType,
+            bucket.dominantAvgLatency
+        );
+    }
+
+    // Preenchimento visual: remove "buracos" usando o último bucket válido anterior
+    const displayBuckets = realBuckets.map((bucket) => ({ ...bucket }));
+    let lastValidBucket = null;
+
+    for (let i = 0; i < displayBuckets.length; i += 1) {
+        const bucket = displayBuckets[i];
+
+        if (bucket.checks > 0) {
+            lastValidBucket = { ...bucket, filledFromPrevious: false };
+            continue;
+        }
+
+        if (lastValidBucket) {
+            displayBuckets[i] = {
+                ...bucket,
+                ...lastValidBucket,
+                startTs: bucket.startTs,
+                endTs: bucket.endTs,
+                filledFromPrevious: true
+            };
+        }
+    }
+
+    function bucketHasRealFailure(bucket) {
+        if (bucket.httpFailCount > 0) return true;
+        if (bucket.tcpFailCount > 0) return true;
+        if (bucket.dnsFailCount > 0) return true;
+
+        if (
+            bucket.pingFailCount > 0 &&
+            bucket.tcpChecks === 0 &&
+            bucket.httpChecks === 0 &&
+            bucket.dnsChecks === 0
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    const noDataRaw = realBuckets.filter((bucket) => bucket.checks === 0).length;
+
     let ok = 0;
     let warn = 0;
     let high = 0;
     let fail = 0;
-    let noData = 0;
 
-    for (const item of buckets) {
-        if (!item) {
-            noData += 1;
-            continue;
-        }
-        const latency = item.latency ?? 0;
-        if (!item.success) {
+    for (const item of realBuckets) {
+        if (item.checks === 0) continue;
+
+        if (bucketHasRealFailure(item)) {
             fail += 1;
-        } else if (latency > 300) {
+        } else if (item.dominantLatencyLevel >= 2) {
             high += 1;
-        } else if (latency > 100) {
+        } else if (item.dominantLatencyLevel >= 1) {
             warn += 1;
         } else {
             ok += 1;
         }
     }
 
-    const oldestIdx = buckets.findIndex(Boolean);
-    const newestIdx = buckets.length - 1 - [...buckets].reverse().findIndex(Boolean);
+    const oldestIdx = realBuckets.findIndex((bucket) => bucket.checks > 0);
+    const newestIdx = (() => {
+        for (let i = realBuckets.length - 1; i >= 0; i -= 1) {
+            if (realBuckets[i].checks > 0) return i;
+        }
+        return -1;
+    })();
 
     const formatDateTime = (ts) =>
         new Date(ts).toLocaleString("pt-BR", {
@@ -1111,20 +1398,38 @@ function renderHeatmap(container, payload, hostName) {
             minute: "2-digit"
         });
 
-    const oldestTs = filled.length ? formatDateTime(filled[0].ts) : "N/A";
-    const newestTs = filled.length ? formatDateTime(filled[filled.length - 1].ts) : "N/A";
+    const oldestTs = oldestIdx >= 0 ? formatDateTime(realBuckets[oldestIdx].startTs) : "N/A";
+    const newestTs = newestIdx >= 0 ? formatDateTime(realBuckets[newestIdx].endTs) : "N/A";
+
+    const windowLabel =
+        HEATMAP_WINDOW_PRESETS.find((preset) => preset.minutes === effectiveWindowMinutes)?.label
+        || `${effectiveWindowMinutes} min`;
+
+    const optionsHtml = HEATMAP_WINDOW_PRESETS.map((preset) =>
+        `<option value="${preset.minutes}" ${preset.minutes === effectiveWindowMinutes ? "selected" : ""}>${preset.label}</option>`
+    ).join("");
+
+    const intervalMinutes = bucketSizeMs / 60000;
+    const checksPerCellLabel = `${intervalMinutes.toFixed(1)} min`;
 
     let html = `
         <div class="heatmap-header">
-            <h4>Heatmap de Latência - ${hostName} (${String(checkType).toUpperCase()})</h4>
-            <small>${HEATMAP_WINDOW_MINUTES} min | ${columns}x${rowsCount} (${totalCells} checks)</small>
+            <h4>Heatmap de Latência - ${hostName}</h4>
+            <div class="heatmap-header-controls">
+                <label class="heatmap-window-label" for="heatmap-window-${container.id}">Janela</label>
+                <select id="heatmap-window-${container.id}" class="heatmap-window-select" onchange="updateHeatmapWindow(this.value)">
+                    ${optionsHtml}
+                </select>
+                <small>${windowLabel} | ${columns}x${rowsCount} (${totalCells} células)</small>
+                <small class="heatmap-batch-hint">Cada quadrado ≈ ${checksPerCellLabel}</small>
+            </div>
         </div>
         <div class="heatmap-stats">
             <span class="heat-stat stat-low">Baixa: ${ok}</span>
             <span class="heat-stat stat-medium">Média: ${warn}</span>
             <span class="heat-stat stat-high">Alta: ${high}</span>
             <span class="heat-stat stat-fail">Falha: ${fail}</span>
-            <span class="heat-stat stat-none">Sem dado: ${noData}</span>
+            <span class="heat-stat stat-none">Sem coleta: ${noDataRaw}</span>
         </div>
         <div class="heatmap-time-axis">
             <small>Check mais velho: ${oldestTs}</small>
@@ -1134,41 +1439,62 @@ function renderHeatmap(container, payload, hostName) {
             <div class="heatmap-grid">
     `;
 
-    for (let idx = 0; idx < buckets.length; idx += 1) {
-        const item = buckets[idx];
+    for (let idx = 0; idx < displayBuckets.length; idx += 1) {
+        const item = displayBuckets[idx];
         let cls = "heat-none";
         let title = "Sem check nessa faixa de tempo";
 
-        if (item) {
-            const latency = item.latency ?? 0;
-            if (!item.success) {
+        if (item.checks > 0 || item.filledFromPrevious) {
+            if (bucketHasRealFailure(item)) {
                 cls = "heat-fail";
-            } else if (latency > 300) {
+            } else if (item.dominantLatencyLevel >= 2) {
                 cls = "heat-high";
-            } else if (latency > 100) {
+            } else if (item.dominantLatencyLevel >= 1) {
                 cls = "heat-medium";
             } else {
                 cls = "heat-low";
             }
-            title = `${checkType} | Latência: ${item.latency ?? "N/A"} ms | ${item.timestamp}`;
+
+            const startLabel = formatDateTime(item.startTs);
+            const endLabel = formatDateTime(item.endTs);
+            const latencyLabel = item.dominantAvgLatency !== null
+                ? `${item.dominantAvgLatency.toFixed(1)} ms`
+                : "N/A";
+
+            const dominantLabel = item.dominantType ? item.dominantType.toUpperCase() : "N/A";
+            const icmpBlockedHint = (
+                item.pingFailCount > 0 &&
+                (item.tcpSuccessCount > 0 || item.httpSuccessCount > 0) &&
+                item.tcpFailCount === 0 &&
+                item.httpFailCount === 0
+            );
+            const perTypeSummary = `PING ${item.pingSuccessCount}/${item.pingChecks} (falha:${item.pingFailCount}) | TCP ${item.tcpSuccessCount}/${item.tcpChecks} (falha:${item.tcpFailCount}) | HTTP ${item.httpSuccessCount}/${item.httpChecks} (falha:${item.httpFailCount}) | DNS ${item.dnsSuccessCount}/${item.dnsChecks} (falha:${item.dnsFailCount})`;
+
+            title = item.filledFromPrevious
+                ? `Intervalo sem nova coleta | Estado visual mantido | Tipo base: ${dominantLabel} | Latência base: ${latencyLabel} | ${perTypeSummary}${icmpBlockedHint ? " | ICMP possivelmente bloqueado" : ""} | ${startLabel} até ${endLabel}`
+                : `Tipo dominante: ${dominantLabel} | Bucket: ${item.checks} checks | OK: ${item.successCount} | Falha: ${item.failCount} | Latência média dominante: ${latencyLabel} | ${perTypeSummary}${icmpBlockedHint ? " | ICMP possivelmente bloqueado" : ""} | ${startLabel} até ${endLabel}`;
         }
 
         const oldestClass = idx === oldestIdx ? "is-oldest" : "";
         const newestClass = idx === newestIdx ? "is-newest" : "";
-        html += `<div class="heat-cell ${cls} ${oldestClass} ${newestClass}" title="${title}"></div>`;
+        const filledClass = item.filledFromPrevious ? "is-filled" : "";
+
+        html += `<div class="heat-cell ${cls} ${oldestClass} ${newestClass} ${filledClass}" title="${title}"></div>`;
     }
 
     html += `</div></div>
         <div class="heatmap-legend">
-            <span title="Latência até 100 ms e check com sucesso"><i class="legend-dot heat-low"></i> Bom</span>
-            <span title="Latência entre 101 e 300 ms e check com sucesso"><i class="legend-dot heat-medium"></i> Atenção</span>
-            <span title="Latência acima de 300 ms e check com sucesso"><i class="legend-dot heat-high"></i> Ruim</span>
-            <span title="Check sem sucesso (falha de monitoramento)"><i class="legend-dot heat-fail"></i> Falha</span>
-            <span title="Sem checks nessa faixa de tempo"><i class="legend-dot heat-none"></i> Sem dado</span>
-            <span title="Borda clara = check mais velho no período"><i class="legend-dot legend-oldest"></i> Mais velho</span>
-            <span title="Borda escura = check mais novo no período"><i class="legend-dot legend-newest"></i> Mais novo</span>
+            <span title="Latência dentro do aceitável para o tipo dominante"><i class="legend-dot heat-low"></i> Bom</span>
+            <span title="Latência em atenção para o tipo dominante"><i class="legend-dot heat-medium"></i> Atenção</span>
+            <span title="Latência ruim para o tipo dominante"><i class="legend-dot heat-high"></i> Ruim</span>
+            <span title="Falha real de HTTP/TCP/DNS, ou ping sozinho falhando"><i class="legend-dot heat-fail"></i> Falha</span>
+            <span title="Sem coleta nesse intervalo"><i class="legend-dot heat-none"></i> Sem coleta</span>
+            <span title="Intervalo sem nova coleta, mantendo o último estado visual"><i class="legend-dot legend-maintained"></i> Estado mantido</span>
+            <span title="Borda clara = bucket mais velho"><i class="legend-dot legend-oldest"></i> Mais velho</span>
+            <span title="Borda escura = bucket mais novo"><i class="legend-dot legend-newest"></i> Mais novo</span>
         </div>
     `;
+
     container.innerHTML = html;
 }
 
