@@ -44,8 +44,15 @@ class Host(Base):
     disk_usage = Column(Float, nullable=True)
     disk_remaining = Column(Float, nullable=True)
     network_traffic = Column(Float, nullable=True)
+    network_in_bps = Column(Float, nullable=True)
+    network_out_bps = Column(Float, nullable=True)
+
+    last_net_in_octets = Column(Float, nullable=True)
+    last_net_out_octets = Column(Float, nullable=True)
+    last_net_check = Column(DateTime, nullable=True)
     snmp_community = Column(String, default="public")
-    
+    last_snmp_check = Column(DateTime, nullable=True)
+
     sla_rolling_ping = Column(Float, nullable=True)
     sla_rolling_tcp = Column(Float, nullable=True)
     sla_rolling_http = Column(Float, nullable=True)
@@ -126,3 +133,18 @@ class User(Base):
     locked = Column(Boolean, default=False)
     must_change_password = Column(Boolean, default=True)
     locked_until = Column(DateTime, nullable=True)
+
+class SNMPMetric(Base):
+    __tablename__ = "snmp_metrics"
+
+    id = Column(Integer, primary_key=True)
+
+    host_id = Column(Integer)
+    cpu = Column(Float)
+    ram = Column(Float)
+    disk = Column(Float)
+    network_in_bps = Column(Float, nullable=True)
+    network_out_bps = Column(Float, nullable=True)
+    network_total_bps = Column(Float, nullable=True)
+
+    timestamp = Column(DateTime, default=datetime.utcnow)

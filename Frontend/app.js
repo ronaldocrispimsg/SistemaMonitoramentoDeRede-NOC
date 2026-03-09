@@ -250,7 +250,15 @@ async function loadHosts() {
                         </br><small>Variacao na latencia (tcp): ${h.jitter_ms_tcp ?? "N/A"}ms</small>
                         </br><small>Variacao na latencia (http): ${h.jitter_ms_http ?? "N/A"}ms</small>
                         </br><small>Tendencia do status (http): ${h.trend_http ?? "N/A"}</small>
-                    </div>
+                        <br><hr>
+                        <small><b>SNMP</b></small>
+                        <br><small>CPU: ${h.cpu_usage ?? "N/A"}%</small>
+                        <br><small>RAM: ${h.ram_usage ?? "N/A"}%</small>
+                        <br><small>Disco: ${h.disk_usage ?? "N/A"}%</small>
+                        <br><small>Rede: ${formatBps(h.network_traffic)}</small>
+                        <br><small>RX: ${formatBps(h.network_in_bps)}</small>
+                        <br><small>TX: ${formatBps(h.network_out_bps)}</small>
+                        </div>
                     <div class="button-group" style="display: flex; gap: 10px;">
                         <button class="history-btn"
                             onclick="toggleHistory('${h.name}')">
@@ -469,6 +477,25 @@ function openEditModal(name, ip, port, httpUrl) {
 
 function closeModal() {
     document.getElementById("editModal").classList.add("hidden");
+}
+
+function formatBps(value) {
+    if (value === null || value === undefined) return "N/A";
+
+    const bps = Number(value);
+
+    if (bps < 1000) return `${bps.toFixed(2)} bps`;
+    if (bps < 1000_000) return `${(bps / 1000).toFixed(2)} Kbps`;
+    if (bps < 1000_000_000) return `${(bps / 1000_000).toFixed(2)} Mbps`;
+
+    return `${(bps / 1000_000_000).toFixed(2)} Gbps`;
+}
+
+function metricClass(value, warn = 80, critical = 95) {
+    if (value === null || value === undefined) return "metric-neutral";
+    if (value >= critical) return "metric-critical";
+    if (value >= warn) return "metric-warn";
+    return "metric-ok";
 }
 
 async function submitModalEdit() {

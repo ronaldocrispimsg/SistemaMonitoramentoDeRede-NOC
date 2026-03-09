@@ -359,3 +359,23 @@ input[type=number]{
 .heat-fail{
     background: #ef4444;
 }
+
+.metric-ok{
+    color:#15803d;
+    font-weight:bold;
+}
+
+.metric-warn{
+    color:#b45309;
+    font-weight:bold;
+}
+
+.metric-critical{
+    color:#b91c1c;
+    font-weight:bold;
+}
+
+.metric-neutral{
+    color:#475569;
+    font-weight:bold;
+}
