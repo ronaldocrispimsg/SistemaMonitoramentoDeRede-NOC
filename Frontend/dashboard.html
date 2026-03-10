@@ -54,7 +54,10 @@
         </select>
     </div>
     <div class="hosts-toolbar">
-      <h2>Hosts</h2>
+      <div class="hosts-toolbar-main">
+        <h2>Hosts</h2>
+        <button id="openTrashBtn" class="trash-open-btn" title="Abrir lixeira" aria-label="Abrir lixeira"><span>🗑</span> Lixeira</button>
+      </div>
       <button id="refreshBtn">Atualizar Lista</button>
     </div>
     <div id="hosts"></div>
@@ -95,6 +98,19 @@
       <button onclick="closeChangePwdModal()">Cancelar</button>
     </div>
 
+  </div>
+</div>
+
+<div id="trashModal" class="modal hidden">
+  <div class="modal-content trash-modal-content">
+    <div class="trash-modal-header">
+      <h3>Lixeira</h3>
+      <button class="modal-close-btn" onclick="closeTrashModal()" aria-label="Fechar lixeira">×</button>
+    </div>
+    <div class="trash-modal-toolbar">
+      <button id="refreshTrashBtn">Atualizar lista</button>
+    </div>
+    <div id="trashHostsList" class="trash-list"></div>
   </div>
 </div>
 

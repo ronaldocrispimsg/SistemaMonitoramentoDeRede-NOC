@@ -7,7 +7,7 @@ from threading import Lock
 from sqlalchemy.orm import Session
 
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached, http_check
-from Backend.database import SessionLocal
+from Backend.database import SessionLocal, ensure_runtime_schema
 from Backend.metrics import (
     apply_preventive_logic,
     calc_jitter_http,
@@ -63,6 +63,7 @@ _DEGRADED_STREAKS_LOCK = Lock()
 
 MONITOR_INTERVAL_SECONDS = int(os.getenv("NOC_MONITOR_INTERVAL_SECONDS", "20"))
 CLEANUP_INTERVAL_SECONDS = int(os.getenv("NOC_CLEANUP_INTERVAL_SECONDS", "3600"))
+SNMP_ALLOWED_COMMUNITY = "noc-lite"
 
 
 def _alert_cooldown_passed(
@@ -153,6 +154,20 @@ def _resolve_host_check_url(host: Host) -> str | None:
     return None
 
 
+def _snmp_is_configured(host: Host) -> bool:
+    community = (host.snmp_community or "").strip().lower()
+    if community == SNMP_ALLOWED_COMMUNITY:
+        return True
+
+    logger.debug(
+        "SNMP ignorado para host=%s: community inválida (%r). Permitida apenas: '%s'",
+        host.name,
+        host.snmp_community,
+        SNMP_ALLOWED_COMMUNITY,
+    )
+    return False
+
+
 def _extract_ips_and_ttl(dns_result):
     ips = []
     ttl = None
@@ -170,6 +185,7 @@ def _extract_ips_and_ttl(dns_result):
 
 
 def _host_check_blocking(host_id: int) -> None:
+    ensure_runtime_schema()
     db: Session = SessionLocal()
     try:
         host = (
@@ -182,6 +198,8 @@ def _host_check_blocking(host_id: int) -> None:
 
         old_status = host.status
         old_severity = host.severity
+        old_status_normalized = str(old_status or "").strip().upper()
+        baseline_pending = bool(getattr(host, "baseline_pending", False))
 
         dns_result = resolve_dns_cached(host.address, db)
         ips, ttl, ttl_remaining = _extract_ips_and_ttl(dns_result)
@@ -218,6 +236,8 @@ def _host_check_blocking(host_id: int) -> None:
             host.status = "DOWN"
             host.last_resolved_ip = None
             host.last_check = datetime.utcnow()
+            if baseline_pending:
+                host.baseline_pending = False
 
             db.add(
                 CheckResult(
@@ -356,6 +376,8 @@ def _host_check_blocking(host_id: int) -> None:
         )
 
         host.status = new_status
+        if baseline_pending:
+            host.baseline_pending = False
 
         if new_status == "UP":
             host.success_streak = (host.success_streak or 0) + 1
@@ -370,7 +392,13 @@ def _host_check_blocking(host_id: int) -> None:
             host.success_streak = 0
             _set_degraded_streak(host.id, 0)
 
-        if old_status and old_status != new_status:
+        is_real_recovery = (
+            old_status_normalized in {"DOWN", "DEGRADED"}
+            and new_status == "UP"
+            and host.success_streak >= ALERT_RECOVER_THRESHOLD
+        )
+
+        if (not baseline_pending) and old_status and old_status != new_status:
             if service_up_without_icmp and new_status == "UP":
                 pass
             elif new_status != "UP" and host.fail_streak >= ALERT_FAIL_THRESHOLD:
@@ -391,7 +419,7 @@ def _host_check_blocking(host_id: int) -> None:
                         check_used=primary_check,
                     )
                 )
-            elif new_status == "UP" and host.success_streak >= ALERT_RECOVER_THRESHOLD:
+            elif is_real_recovery:
                 db.add(
                     Alert(
                         host_id=host.id,
@@ -477,7 +505,7 @@ def _host_check_blocking(host_id: int) -> None:
 
         snmp_data = None
 
-        if host.status == "UP" and can_attempt_snmp(host.id):
+        if host.status == "UP" and _snmp_is_configured(host) and can_attempt_snmp(host.id):
             try:
                 snmp_data = update_host_snmp(host, db)
             except Exception:
@@ -607,6 +635,7 @@ def _host_check_blocking(host_id: int) -> None:
 
 
 def get_active_host_ids() -> list[int]:
+    ensure_runtime_schema()
     db: Session = SessionLocal()
     try:
         rows = db.query(Host.id).filter(Host.active.is_(True)).all()
@@ -645,6 +674,7 @@ def trim_history(db, host_id, check_type, limit=500):
 
 
 def cleanup_old_data():
+    ensure_runtime_schema()
     db: Session = SessionLocal()
     try:
         hosts = db.query(Host).all()

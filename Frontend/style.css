@@ -295,8 +295,109 @@ BOTÕES SUPERIORES
 .hosts-toolbar{
     display:flex;
     justify-content:space-between;
-    align-items:center;
+    align-items:flex-end;
     margin-bottom:10px;
+}
+
+.hosts-toolbar-main{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:6px;
+}
+
+.hosts-toolbar-main h2{
+    margin:0;
+}
+
+.trash-open-btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    padding:6px 14px;
+    border:1px solid #d7dee8;
+    border-radius:6px;
+    background:#f8fafc;
+    color:#475569;
+    font-size:0.95rem;
+    font-weight:600;
+    cursor:pointer;
+    transition:
+        background .15s ease,
+        border-color .15s ease,
+        box-shadow .15s ease,
+        transform .08s ease;
+}
+
+.trash-open-btn span{
+    font-size:1.25rem;
+    line-height:1;
+}
+
+.trash-open-btn:hover{
+    background:#eef2f7;
+    border-color:#cbd5e1;
+    box-shadow:0 1px 2px rgba(0,0,0,0.05);
+}
+
+.trash-open-btn:active{
+    transform:scale(0.97);
+}
+
+.trash-list{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+}
+
+.trash-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    padding:10px 12px;
+    background:linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+}
+
+.trash-meta{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    min-width:0;
+}
+
+.trash-meta strong{
+    font-size:0.95rem;
+    color:#1f2937;
+}
+
+.trash-meta small{
+    color:#64748b;
+    overflow-wrap:anywhere;
+}
+
+.trash-actions{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+}
+
+.trash-actions button{
+    min-width:150px;
+}
+
+.trash-actions .danger-btn{
+    background:#c23b3b;
+    color:#fff;
+    border:none;
+    border-radius:8px;
+}
+
+.trash-actions .danger-btn:hover{
+    background:#a92f2f;
 }
 
 #refreshBtn{
@@ -308,6 +409,18 @@ BOTÕES SUPERIORES
 }
 
 #refreshBtn:hover{
+    background:#919191;
+}
+
+#refreshTrashBtn{
+    border:none;
+    border-radius:8px;
+    background:#b4b4b4;
+    color:#fff;
+    font-weight:600;
+}
+
+#refreshTrashBtn:hover{
     background:#919191;
 }
 
@@ -397,6 +510,13 @@ CARDS HOST
     gap:10px;
 }
 
+.host-top-actions{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-left:auto;
+}
+
 .host-title-wrap{
     display:flex;
     align-items:center;
@@ -407,6 +527,27 @@ CARDS HOST
 .host-title{
     font-size:1.05rem;
     overflow-wrap:anywhere;
+}
+
+.host-delete-btn{
+    width:26px;
+    height:26px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border:none;
+    border-radius:4px;
+    background:#ef4444;
+    color:white;
+    font-size:16px;
+    font-weight:bold;
+    cursor:pointer;
+    transition:all .15s ease;
+}
+
+.host-delete-btn:hover{
+    background:#dc2626;
+    transform:scale(1.08);
 }
 
 .host-addr{
@@ -465,6 +606,10 @@ CARDS HOST
     font-weight:700;
     letter-spacing:0.04em;
     padding:3px 8px;
+}
+
+.host-top-actions .incident-badge{
+    margin-left:0;
 }
 
 .host-meta-grid{
@@ -777,18 +922,23 @@ SEVERITY
 BOTÕES DOS CARDS
 ========================= */
 
-.button-group{
-    display:grid;
-    grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
-    gap:6px;
+.button-group,
+.host-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:10px;
     width:100%;
 }
 
-.button-group button{
-    width:100%;
-    padding:5px 7px;
-    font-size:0.76em;
-    min-height:36px;
+.button-group button,
+.host-actions button{
+    flex:1 1 0;
+    min-width:0;
+    text-align:center;
+    padding:6px 10px;
+    font-size:0.8em;
+    min-height:38px;
     border-radius:6px;
     border:1px solid #d7dee8;
     background:#f9fafb;
@@ -983,6 +1133,54 @@ MODAL
     border-radius:10px;
     box-shadow:0 4px 15px rgba(0,0,0,0.08);
     text-align:center;
+}
+
+.trash-modal-content{
+    width:min(760px, 94vw);
+    max-height:min(78vh, 760px);
+    padding:18px;
+    text-align:left;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+}
+
+.trash-modal-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+}
+
+.trash-modal-header h3{
+    margin:0;
+}
+
+.modal-close-btn{
+    width:34px;
+    height:34px;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    background:#f3f4f6;
+    color:#4b5563;
+    font-size:1.15rem;
+    line-height:1;
+    padding:0;
+}
+
+.modal-close-btn:hover{
+    background:#e5e7eb;
+}
+
+.trash-modal-toolbar{
+    display:flex;
+    justify-content:flex-end;
+}
+
+.trash-modal-content .trash-list{
+    overflow:auto;
+    max-height:min(58vh, 560px);
+    padding-right:4px;
 }
 
 .modal-content input{
@@ -1192,8 +1390,8 @@ input[type=number]{
     }
 
     .hosts-toolbar{
-        flex-direction:column;
-        align-items:flex-start;
+        flex-direction:row;
+        align-items:flex-end;
         gap:8px;
     }
 
@@ -1314,14 +1512,9 @@ input[type=number]{
         width:100%;
     }
 
-    .button-group{
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap:6px;
-    }
-
-    .button-group button{
-        min-height:40px;
-        font-size:0.8em;
+    .button-group button,
+    .host-actions button{
+        flex:1 1 calc(50% - 8px);
     }
 
     .chart-box{
@@ -1341,6 +1534,11 @@ input[type=number]{
     .modal-content{
         width:min(320px, 92vw);
         padding:20px;
+    }
+
+    .trash-modal-content{
+        width:min(92vw, 760px);
+        padding:14px;
     }
 
     .modal-content input,
@@ -1372,8 +1570,18 @@ input[type=number]{
         grid-template-columns: 1fr;
     }
 
-    .button-group{
-        grid-template-columns: 1fr;
+    .button-group button,
+    .host-actions button{
+        flex:1 1 100%;
+    }
+
+    .hosts-toolbar{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .trash-actions button{
+        min-width:100%;
     }
 
     .timeline-item-top{

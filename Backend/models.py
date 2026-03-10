@@ -15,6 +15,8 @@ class Host(Base):
 
     active = Column(Boolean, default=True)
     active_time = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    baseline_pending = Column(Boolean, default=True, nullable=False)
 
     last_resolved_ip = Column(String, nullable=True)
     hostname_resolved = Column(String, nullable=True)
@@ -50,7 +52,7 @@ class Host(Base):
     last_net_in_octets = Column(Float, nullable=True)
     last_net_out_octets = Column(Float, nullable=True)
     last_net_check = Column(DateTime, nullable=True)
-    snmp_community = Column(String, default="public")
+    snmp_community = Column(String, default="noc-lite")
     last_snmp_check = Column(DateTime, nullable=True)
 
     sla_rolling_ping = Column(Float, nullable=True)

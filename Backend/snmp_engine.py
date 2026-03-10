@@ -16,10 +16,8 @@ from Backend.models import SNMPMetric
 
 
 SNMP_BURST_FAIL_LIMIT = 3
-SNMP_CONSECUTIVE_FAIL_LIMIT = 5
 SNMP_BACKOFF_BASE_SECONDS = 300
 SNMP_BACKOFF_MAX_SECONDS = 3600
-SNMP_DISABLE_SECONDS = 24 * 3600
 SNMP_BACKOFF_STATE = {}
 
 
@@ -48,6 +46,15 @@ def get_snmp_state(host_id):
     return SNMP_BACKOFF_STATE[host_id]
 
 
+def reset_snmp_backoff(host_id=None):
+    if host_id is None:
+        total = len(SNMP_BACKOFF_STATE)
+        SNMP_BACKOFF_STATE.clear()
+        return total
+
+    return 1 if SNMP_BACKOFF_STATE.pop(host_id, None) is not None else 0
+
+
 def can_attempt_snmp(host_id):
     state = get_snmp_state(host_id)
     pause_until = state["pause_until"]
@@ -68,16 +75,6 @@ def register_snmp_failure(host_id, host_name):
     state = get_snmp_state(host_id)
     state["failures_in_burst"] += 1
     state["consecutive_failures"] += 1
-
-    if state["consecutive_failures"] >= SNMP_CONSECUTIVE_FAIL_LIMIT:
-        state["pause_until"] = datetime.utcnow() + timedelta(seconds=SNMP_DISABLE_SECONDS)
-        state["failures_in_burst"] = 0
-        state["backoff_level"] = 0
-        print(
-            f"[SNMP DISABLED] {host_name}: {SNMP_CONSECUTIVE_FAIL_LIMIT} falhas consecutivas, "
-            f"SNMP pausado por {SNMP_DISABLE_SECONDS}s"
-        )
-        return
 
     if state["failures_in_burst"] < SNMP_BURST_FAIL_LIMIT:
         return

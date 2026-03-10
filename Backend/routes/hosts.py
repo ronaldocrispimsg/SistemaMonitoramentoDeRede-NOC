@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from Backend.database import get_db
@@ -21,6 +21,56 @@ from Backend.dependencies import get_current_user
 from Backend.security import verify_password, create_access_token, hash_password
 
 router = APIRouter()
+
+
+def _reset_host_operational_state(host: Host) -> None:
+    host.baseline_pending = True
+    host.status = "UNKNOWN"
+    host.status_ping = None
+    host.status_tcp = None
+    host.last_check = None
+    host.latency_ping = None
+    host.latency_tcp = None
+    host.fail_streak = 0
+    host.success_streak = 0
+    host.last_resolved_ip = None
+    host.hostname_resolved = None
+    host.dns_ttl = None
+    host.dns_ttl_remaining = None
+    host.last_ttl_alert = None
+    host.health_score = 0
+    host.severity = "UNKNOWN"
+    host.last_preventive_alert = None
+
+    host.cpu_usage = None
+    host.ram_usage = None
+    host.disk_usage = None
+    host.disk_remaining = None
+    host.network_traffic = None
+    host.network_in_bps = None
+    host.network_out_bps = None
+    host.last_net_in_octets = None
+    host.last_net_out_octets = None
+    host.last_net_check = None
+    host.last_snmp_check = None
+
+    host.sla_rolling_ping = None
+    host.sla_rolling_tcp = None
+    host.sla_rolling_http = None
+    host.jitter_ms_ping = None
+    host.jitter_ms_tcp = None
+    host.jitter_ms_http = None
+    host.slope = None
+    host.trend = "UNKNOWN"
+    host.slope_http = None
+    host.trend_http = "UNKNOWN"
+
+
+def _deactivate_host_entity(host: Host) -> None:
+    host.active = False
+    host.active_time = datetime.utcnow()
+    host.deleted_at = datetime.utcnow()
+
 
 def _is_icmp_blocked_but_service_up(
     host: Host,
@@ -86,7 +136,11 @@ def infer_probable_cause(db: Session, host: Host) -> str:
 
 @router.post("/host/create")
 def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
-    existing_host = db.query(Host).filter(Host.name == data.name).first()
+    normalized_name = (data.name or "").strip()
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="Nome do host é obrigatório")
+
+    existing_host = db.query(Host).filter(Host.name == normalized_name).first()
     resolved = None
 
     if is_ip(data.address):
@@ -102,10 +156,11 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
         if not existing_host.active:
             existing_host.active = True
             existing_host.active_time = None
-            existing_host.status = "UNKNOWN"
-            existing_host.last_check = None
+            existing_host.deleted_at = None
             existing_host.address = data.address
             existing_host.port = data.port
+            existing_host.hostname_resolved = resolved
+            _reset_host_operational_state(existing_host)
             existing_host.hostname_resolved = resolved
 
             existing_host.http_url = resolve_http_url(
@@ -116,15 +171,25 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
 
             db.commit()
             db.refresh(existing_host)
+            if not existing_host.active:
+                raise HTTPException(status_code=500, detail="Falha ao reativar host")
             return existing_host
         else:
             raise HTTPException(status_code=409, detail="Host com esse nome já existe")
 
     else:
         host = Host(
-            name=data.name,
+            name=normalized_name,
             address=data.address,
             port=data.port,
+            active=True,
+            active_time=None,
+            deleted_at=None,
+            baseline_pending=True,
+            status="UNKNOWN",
+            status_ping="UNKNOWN",
+            status_tcp="UNKNOWN",
+            snmp_community="noc-lite",
             hostname_resolved=resolved,
         )
 
@@ -137,6 +202,8 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
         db.add(host)
         db.commit()
         db.refresh(host)
+        if not host.active:
+            raise HTTPException(status_code=500, detail="Falha ao ativar host recém-criado")
 
         return host
 
@@ -144,7 +211,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
 
 @router.get("/hosts/list")
 def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
-    hosts = db.query(Host).filter(Host.active == True).all()
+    hosts = db.query(Host).filter(Host.active.is_(True)).all()
     open_incident_hosts = {
         row[0]
         for row in db.query(Incident.host_name)
@@ -263,6 +330,108 @@ def host_history(host_name: str, db: Session = Depends(get_db), user: User = Dep
         ]
     }
 
+@router.get("/hosts/trash")
+def list_hosts_trash(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
+    hosts = (
+        db.query(Host)
+        .filter(Host.active.is_(False))
+        .order_by(Host.deleted_at.desc(), Host.name.asc())
+        .all()
+    )
+    return hosts
+
+
+@router.post("/hosts/{host_id}/deactivate")
+def deactivate_host(
+    host_id: int,
+    host_name: str = Query(...),
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    host = db.query(Host).filter(Host.id == host_id).first()
+
+    if not host:
+        raise HTTPException(status_code=404, detail="Host não encontrado")
+
+    if not host.active:
+        return {"detail": "Host já está na lixeira"}
+
+    if host.name != host_name:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Conflito de identificação: id={host_id} pertence a '{host.name}', não a '{host_name}'",
+        )
+
+    _deactivate_host_entity(host)
+    db.commit()
+
+    return {"detail": "Host movido para a lixeira com sucesso"}
+
+
+@router.post("/hosts/{host_id}/restore")
+def restore_host(
+    host_id: int,
+    host_name: str = Query(...),
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    host = db.query(Host).filter(Host.id == host_id).first()
+
+    if not host:
+        raise HTTPException(status_code=404, detail="Host não encontrado")
+
+    if host.active:
+        return {"detail": "Host já está ativo"}
+
+    if host.name != host_name:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Conflito de identificação: id={host_id} pertence a '{host.name}', não a '{host_name}'",
+        )
+
+    host.active = True
+    host.active_time = None
+    host.deleted_at = None
+    _reset_host_operational_state(host)
+
+    db.commit()
+    return {"detail": "Host restaurado com sucesso"}
+
+
+@router.delete("/hosts/{host_id}/hard-delete")
+def hard_delete_host(
+    host_id: int,
+    host_name: str = Query(...),
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    host = db.query(Host).filter(Host.id == host_id).first()
+
+    if not host:
+        raise HTTPException(status_code=404, detail="Host não encontrado")
+
+    if host.active:
+        raise HTTPException(
+            status_code=409,
+            detail="Host ativo não pode ser removido permanentemente. Mova para lixeira antes.",
+        )
+
+    if host.name != host_name:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Conflito de identificação: id={host_id} pertence a '{host.name}', não a '{host_name}'",
+        )
+
+    db.query(CheckResult).filter(CheckResult.host_id == host.id).delete(synchronize_session=False)
+    db.query(Alert).filter(Alert.host_id == host.id).delete(synchronize_session=False)
+    db.query(SNMPMetric).filter(SNMPMetric.host_id == host.id).delete(synchronize_session=False)
+    db.query(Incident).filter(Incident.host_name == host.name).delete(synchronize_session=False)
+    db.delete(host)
+    db.commit()
+
+    return {"detail": "Host removido permanentemente"}
+
+
 @router.delete("/host/delete/{host_name}")
 def delete_host(host_name: str, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     host = db.query(Host).filter(Host.name == host_name).first()
@@ -270,11 +439,13 @@ def delete_host(host_name: str, db: Session = Depends(get_db), user: str = Depen
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
 
-    host.active = False
-    host.active_time = datetime.now()
+    if not host.active:
+        return {"detail": "Host já está na lixeira"}
+
+    _deactivate_host_entity(host)
     db.commit()
 
-    return {"detail": "Host desativado com sucesso"}
+    return {"detail": "Host movido para a lixeira com sucesso"}
 
 @router.put("/host/update/{host_name}")
 def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db), user: str = Depends(get_current_user)):

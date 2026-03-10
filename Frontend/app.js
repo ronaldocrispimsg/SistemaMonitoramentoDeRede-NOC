@@ -144,6 +144,7 @@ async function runHeavyRefresh() {
     if (shouldDeferHeavyRefresh()) return;
     await Promise.all([
         runTaskOnce("hosts-full", loadHosts),
+        runTaskOnce("trash", loadTrashHosts),
         runTaskOnce("timeline", loadTimeline)
     ]);
 }
@@ -412,6 +413,7 @@ if (hostForm) {
                 portInput.value = "";
                 httpUrlInput.value = "";
                 loadHosts();
+                loadTrashHosts();
                 showToast("success", "Host cadastrado com sucesso.");
             } else {
                 const errorData = await response.json();
@@ -572,7 +574,16 @@ async function loadHosts() {
                                 <small class="host-addr">(${h.address}${h.port ? ':' + h.port : ''})</small>
                             </strong>
                         </div>
-                        ${incidentBadgeHtml}
+                        <div class="host-top-actions">
+                            ${incidentBadgeHtml}
+                            <button
+                                class="host-delete-btn"
+                                type="button"
+                                title="Apagar host"
+                                aria-label="Apagar host"
+                                onclick='softDeleteHost(${h.id}, ${JSON.stringify(h.name)})'
+                            >✕</button>
+                        </div>
                     </div>
 
                     <div class="host-meta-grid">
@@ -648,7 +659,6 @@ async function loadHosts() {
                         <button onclick="toggleAvailabilityChartType('${h.name}')">Gráfico de disponibilidade por tipo</button>
                         <button onclick="toggleAvailabilityChart('${h.name}')">Gráfico de disponibilidade geral</button>
                         <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}')">Editar</button>
-                        <button class="delete-btn" onclick="softDeleteHost('${h.name}')">Deletar</button>
                     </div>
                 </div>
 
@@ -1606,25 +1616,116 @@ async function checkAlerts() {
     }
 }
 
-async function softDeleteHost(name) {
+async function softDeleteHost(hostId, hostName) {
 
-    if (!confirm("Remover host?")) return;
+    if (!confirm(`Mover host "${hostName}" para a lixeira?`)) return;
 
     try {
-        const res = await fetchWithAuth(`${API}/host/delete/${name}`, {
-            method: "DELETE"
+        const res = await fetchWithAuth(`${API}/hosts/${hostId}/deactivate?host_name=${encodeURIComponent(hostName)}`, {
+            method: "POST"
         });
 
         if (!res.ok) {
             const err = await res.json();
-            showToast("error", "Erro ao remover: " + (err.detail || "erro"));
+            showToast("error", "Erro ao mover para lixeira: " + (err.detail || "erro"));
             return;
         }
 
         await loadHosts();
-        showToast("success", "Host removido com sucesso.");
+        await loadTrashHosts();
+        showToast("success", "Host movido para a lixeira.");
 
     } catch (e) {
+        showToast("error", "Falha de conexão com a API.");
+    }
+}
+
+async function loadTrashHosts() {
+    const box = document.getElementById("trashHostsList");
+    if (!box) return;
+
+    try {
+        const res = await fetchWithAuth(`${API}/hosts/trash`);
+        if (!res || !res.ok) {
+            box.innerHTML = "<small>Não foi possível carregar a lixeira.</small>";
+            return;
+        }
+
+        const hosts = await res.json();
+        if (!Array.isArray(hosts) || hosts.length === 0) {
+            box.innerHTML = "<small>Nenhum host na lixeira.</small>";
+            return;
+        }
+
+        box.innerHTML = hosts.map((host) => `
+            <div class="trash-item">
+                <div class="trash-meta">
+                    <strong>${host.name}</strong>
+                    <small>${host.address}${host.port ? `:${host.port}` : ""}</small>
+                    <small>Desativado em: ${formatApiDateTime(host.deleted_at)}</small>
+                </div>
+                <div class="trash-actions">
+                    <button onclick='restoreHost(${host.id}, ${JSON.stringify(host.name)})'>Restaurar</button>
+                    <button class="danger-btn" onclick='hardDeleteHost(${host.id}, ${JSON.stringify(host.name)})'>Excluir permanentemente</button>
+                </div>
+            </div>
+        `).join("");
+    } catch (err) {
+        box.innerHTML = "<small>Erro ao carregar lixeira.</small>";
+    }
+}
+
+function openTrashModal() {
+    const modal = document.getElementById("trashModal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    runTaskOnce("trash", loadTrashHosts);
+}
+
+function closeTrashModal() {
+    const modal = document.getElementById("trashModal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+}
+
+async function restoreHost(hostId, hostName) {
+    if (!confirm(`Restaurar o host \"${hostName}\" da lixeira?`)) return;
+
+    try {
+        const res = await fetchWithAuth(`${API}/hosts/${hostId}/restore?host_name=${encodeURIComponent(hostName)}`, {
+            method: "POST"
+        });
+        if (!res || !res.ok) {
+            const err = res ? await res.json() : {};
+            showToast("error", "Erro ao restaurar: " + (err.detail || "erro"));
+            return;
+        }
+
+        await loadHosts();
+        await loadTrashHosts();
+        showToast("success", "Host restaurado com sucesso.");
+    } catch (err) {
+        showToast("error", "Falha de conexão com a API.");
+    }
+}
+
+async function hardDeleteHost(hostId, hostName) {
+    if (!confirm(`Excluir permanentemente o host \"${hostName}\"?\nEssa ação não pode ser desfeita.`)) return;
+
+    try {
+        const res = await fetchWithAuth(`${API}/hosts/${hostId}/hard-delete?host_name=${encodeURIComponent(hostName)}`, {
+            method: "DELETE"
+        });
+        if (!res || !res.ok) {
+            const err = res ? await res.json() : {};
+            showToast("error", "Erro na exclusão permanente: " + (err.detail || "erro"));
+            return;
+        }
+
+        await loadHosts();
+        await loadTrashHosts();
+        showToast("success", "Host excluído permanentemente.");
+    } catch (err) {
         showToast("error", "Falha de conexão com a API.");
     }
 }
@@ -1810,9 +1911,18 @@ function filterHosts() {
 // ======================
 
 if (!isLoginPage) {
+    const openTrashBtn = document.getElementById("openTrashBtn");
+    if (openTrashBtn) {
+        openTrashBtn.addEventListener("click", openTrashModal);
+    }
+
     const refreshBtn = document.getElementById("refreshBtn");
     if (refreshBtn) {
         refreshBtn.addEventListener("click", () => runTaskOnce("hosts-full", loadHosts));
+    }
+    const refreshTrashBtn = document.getElementById("refreshTrashBtn");
+    if (refreshTrashBtn) {
+        refreshTrashBtn.addEventListener("click", () => runTaskOnce("trash", loadTrashHosts));
     }
 
     document.addEventListener("visibilitychange", () => {
@@ -1834,6 +1944,7 @@ if (!isLoginPage) {
         touchUserInteraction();
         await runTaskOnce("summary", loadDashboardSummary);
         await runTaskOnce("hosts-full", loadHosts);
+        await runTaskOnce("trash", loadTrashHosts);
         await runTaskOnce("timeline", loadTimeline);
         await runTaskOnce("alerts", checkAlerts);
         startDashboardPolling();
@@ -1841,9 +1952,13 @@ if (!isLoginPage) {
 }
 
 window.onclick = function(event) {
-        const modal = document.getElementById("editModal");
-        if (event.target === modal) {
+        const editModal = document.getElementById("editModal");
+        const trashModal = document.getElementById("trashModal");
+        if (event.target === editModal) {
             closeModal();
+        }
+        if (event.target === trashModal) {
+            closeTrashModal();
         }
     };
 
