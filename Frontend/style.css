@@ -42,20 +42,27 @@ LOGIN
 }
 
 .login-box{
-    width:320px;
+    width:min(420px, 92vw);
     background:white;
-    padding:30px;
+    padding:28px 24px;
     border-radius:10px;
     box-shadow:0 4px 15px rgba(0,0,0,0.08);
     text-align:center;
 }
 
 .login-box h1{
-    margin-bottom:20px;
+    margin:0 0 6px 0;
+    font-size:1.6rem;
+}
+
+.login-subtitle{
+    margin:0 0 18px 0;
+    font-size:0.9rem;
+    color:#64748b;
 }
 
 .login-box input{
-    width: 300px;
+    width:100%;
     margin:8px 0;
     padding:10px;
     border-radius:6px;
@@ -63,7 +70,7 @@ LOGIN
 }
 
 .login-box button{
-    width: 320px;
+    width:100%;
     margin-top:10px;
     padding:10px;
     border-radius:6px;
@@ -76,6 +83,11 @@ LOGIN
 
 .login-box button:hover{
     background:#8d8d8d;
+}
+
+.login-box button.is-loading{
+    opacity:0.85;
+    cursor:wait;
 }
 
 /* =========================
@@ -763,6 +775,52 @@ ALERTAS
     pointer-events:none;
 }
 
+/* =========================
+TOASTS
+========================= */
+
+.toast-container{
+    position:fixed;
+    top:14px;
+    right:14px;
+    z-index:10050;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    width:min(360px, calc(100vw - 28px));
+    pointer-events:none;
+}
+
+.toast{
+    border:1px solid #dbe2ea;
+    border-left:4px solid #94a3b8;
+    border-radius:8px;
+    background:#ffffff;
+    color:#0f172a;
+    padding:10px 12px;
+    box-shadow:0 8px 20px rgba(15, 23, 42, 0.12);
+    font-size:0.88rem;
+    line-height:1.35;
+    opacity:0;
+    transform:translateY(-8px);
+    transition:opacity .2s ease, transform .2s ease;
+}
+
+.toast.show{
+    opacity:1;
+    transform:translateY(0);
+}
+
+.toast.hide{
+    opacity:0;
+    transform:translateY(-6px);
+}
+
+.toast-success{ border-left-color:#22c55e; }
+.toast-error{ border-left-color:#ef4444; }
+.toast-warning{ border-left-color:#f59e0b; }
+.toast-info{ border-left-color:#64748b; }
+
 .alert-card{
     background:#ffffff;
     color:#0f172a;
@@ -1107,6 +1165,12 @@ input[type=number]{
     .modal-content input,
     .modal-actions button{
         width:100%;
+    }
+
+    .toast-container{
+        top:10px;
+        right:10px;
+        width:calc(100vw - 20px);
     }
 }
 

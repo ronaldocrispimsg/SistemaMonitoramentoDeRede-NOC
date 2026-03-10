@@ -1,6 +1,7 @@
 const API = "http://127.0.0.1:8000";
 const charts = {};
 const MAX_POINTS_PER_SERIES = 100;
+let authRedirectScheduled = false;
 
 if (Notification.permission !== "granted") {
     Notification.requestPermission();
@@ -8,6 +9,33 @@ if (Notification.permission !== "granted") {
 
 const token = localStorage.getItem("token");
 const isLoginPage = window.location.pathname.includes("login.html");
+
+function ensureToastContainer() {
+    let container = document.getElementById("toastContainer");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "toastContainer";
+        container.className = "toast-container";
+        document.body.appendChild(container);
+    }
+    return container;
+}
+
+function showToast(type, message, duration = 3200) {
+    const container = ensureToastContainer();
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type || "info"}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => toast.classList.add("show"));
+
+    setTimeout(() => {
+        toast.classList.remove("show");
+        toast.classList.add("hide");
+        setTimeout(() => toast.remove(), 240);
+    }, duration);
+}
 
 // se estiver logado e abrir login → vai pro dashboard
 if (token && isLoginPage) {
@@ -42,11 +70,17 @@ async function fetchWithAuth(url, options = {}) {
         const response = await fetch(url, { ...options, headers });
         
         if (!response || response.status === 401) {
-            if (!isLoginPage) {
-                alert("Sessão expirada. Por favor, faça login novamente.");
+            if (!isLoginPage && !authRedirectScheduled) {
+                authRedirectScheduled = true;
+                showToast("warning", "Sessão expirada. Faça login novamente.", 1400);
+                localStorage.clear();
+                setTimeout(() => {
+                    window.location.href = "login.html";
+                }, 900);
+            } else if (!isLoginPage) {
+                localStorage.clear();
+                window.location.href = "login.html";
             }
-            localStorage.clear();
-            window.location.href = "login.html";
             return null;
         }
         
@@ -68,6 +102,14 @@ if (loginForm) {
         e.preventDefault();
         const userVal = document.getElementById("username").value;
         const passVal = document.getElementById("password").value;
+        const submitBtn = loginForm.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn ? submitBtn.textContent : "Entrar";
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Entrando...";
+            submitBtn.classList.add("is-loading");
+        }
 
         try {
             const response = await fetch(`${API}/auth/login`, {
@@ -84,16 +126,30 @@ if (loginForm) {
 
                 // VERIFICA SE PRECISA TROCAR SENHA
                 if (data.must_change_password) {
+                    showToast("info", "Troca de senha obrigatória para continuar.");
                     document.getElementById("pwdModal").classList.remove("hidden");
                 } else {
-                    alert("Login realizado com sucesso!");
-                    window.location.href="dashboard.html";
+                    showToast("success", "Login realizado com sucesso.");
+                    setTimeout(() => {
+                        window.location.href = "dashboard.html";
+                    }, 600);
                 }
             } else {
-                alert("Erro: " + (data.detail || "Credenciais inválidas"));
+                const detail = String(data.detail || "Credenciais inválidas");
+                if (detail.toLowerCase().includes("bloquead")) {
+                    showToast("error", detail);
+                } else {
+                    showToast("error", "Credenciais inválidas.");
+                }
             }
         } catch (err) {
-            alert("Não foi possível conectar ao servidor.");
+            showToast("error", "Não foi possível conectar ao servidor.");
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalBtnText;
+                submitBtn.classList.remove("is-loading");
+            }
         }
     };
 }
@@ -103,27 +159,35 @@ async function submitChangePassword(){
     const newPwd = document.getElementById("new-pwd").value;
     const confirmPwd = document.getElementById("confirm-pwd").value;
 
-    if(newPwd !== confirmPwd)
-        return alert("Senhas não coincidem");
+    if(newPwd !== confirmPwd) {
+        showToast("warning", "As senhas não coincidem.");
+        return;
+    }
 
     const token = localStorage.getItem("token");
 
-    const res = await fetch(`${API}/auth/first-password`,{
-        method:"POST",
-        headers:{ 
-            "Content-Type":"application/json",
-            "Authorization": "Bearer " + token
-        },
-        body:JSON.stringify({
-            new_password:newPwd
-        })
-    });
+    try {
+        const res = await fetch(`${API}/auth/first-password`,{
+            method:"POST",
+            headers:{ 
+                "Content-Type":"application/json",
+                "Authorization": "Bearer " + token
+            },
+            body:JSON.stringify({
+                new_password:newPwd
+            })
+        });
 
-    if(res.ok){
-        alert("Senha alterada! Sistema Liberado.");
-        window.location.href="dashboard.html";
-    }else{
-        alert("Erro ao alterar senha");
+        if(res.ok){
+            showToast("success", "Senha alterada com sucesso.");
+            setTimeout(() => {
+                window.location.href = "dashboard.html";
+            }, 700);
+        }else{
+            showToast("error", "Erro ao alterar senha.");
+        }
+    } catch (error) {
+        showToast("error", "Não foi possível conectar ao servidor.");
     }
 }
 
@@ -132,8 +196,14 @@ async function changePassword(){
     const newPwd = document.getElementById("new-pwd").value;
     const confirmPwd = document.getElementById("confirm-pwd").value;
 
-    if (newPwd !== confirmPwd) return alert("As senhas não coincidem!");
-    if (newPwd.length < 6) return alert("Senha muito curta!");
+    if (newPwd !== confirmPwd) {
+        showToast("warning", "As senhas não coincidem.");
+        return;
+    }
+    if (newPwd.length < 6) {
+        showToast("warning", "Senha muito curta.");
+        return;
+    }
 
     const token = localStorage.getItem("token");
 
@@ -150,15 +220,18 @@ async function changePassword(){
     });
 
     if(res.status === 403){
-        alert("Conta bloqueada. Contate o administrador.");
+        showToast("error", "Conta bloqueada. Contate o administrador.");
+        return;
     }
 
     if(res.ok){
-        alert("Senha alterada com sucesso!");
+        showToast("success", "Senha alterada com sucesso.");
         localStorage.removeItem("token");
-        window.location.href = "login.html";
+        setTimeout(() => {
+            window.location.href = "login.html";
+        }, 700);
     }else{
-        alert("Erro ao alterar senha");
+        showToast("error", "Erro ao alterar senha.");
     }
 
 }
@@ -198,13 +271,14 @@ if (hostForm) {
                 portInput.value = "";
                 httpUrlInput.value = "";
                 loadHosts();
+                showToast("success", "Host cadastrado com sucesso.");
             } else {
                 const errorData = await response.json();
-                alert("Erro ao cadastrar: " + (errorData.detail || "Erro desconhecido"));
+                showToast("error", "Erro ao cadastrar: " + (errorData.detail || "Erro desconhecido"));
             }
         } catch (err) {
             console.error("Erro na requisição:", err);
-            alert("Não foi possível conectar ao servidor.");
+            showToast("error", "Não foi possível conectar ao servidor.");
         }
     });
 }
@@ -233,7 +307,7 @@ async function loadHosts() {
 
         const res = await fetchWithAuth(`${API}/hosts/list`);
         if (!res) {
-            div.innerHTML = "<p style='color:orange'>⚠ Não foi possível carregar os hosts.</p>";
+            div.innerHTML = "<p style='color:orange'>Não foi possível carregar os hosts.</p>";
             return;
         }
 
@@ -888,8 +962,9 @@ async function submitModalEdit() {
     if (res.ok) {
         closeModal();
         await loadHosts();
+        showToast("success", "Host atualizado com sucesso.");
     } else {
-        alert("Erro ao salvar");
+        showToast("error", "Erro ao salvar alterações do host.");
     }
 }
 
@@ -1281,14 +1356,15 @@ async function softDeleteHost(name) {
 
         if (!res.ok) {
             const err = await res.json();
-            alert("Erro ao remover: " + (err.detail || "erro"));
+            showToast("error", "Erro ao remover: " + (err.detail || "erro"));
             return;
         }
 
         await loadHosts();
+        showToast("success", "Host removido com sucesso.");
 
     } catch (e) {
-        alert("Falha de conexão com API");
+        showToast("error", "Falha de conexão com a API.");
     }
 }
 
@@ -1488,7 +1564,10 @@ const logoutBtn = document.getElementById("logoutBtn");
 
 if (logoutBtn) {
     logoutBtn.onclick = () => {
+        showToast("info", "Sessão encerrada.");
         localStorage.removeItem("token");
-        window.location.href = "login.html";
+        setTimeout(() => {
+            window.location.href = "login.html";
+        }, 250);
     };
 };

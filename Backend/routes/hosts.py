@@ -435,7 +435,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == username).first()
 
     if user and user.locked:
-        if user.locked_until and user.locked_until <= datetime.utcnow():
+        if user.locked_until and user.locked_until <= datetime.now():
             user.locked = False
             user.locked_until = None
             user.attempts = 0
@@ -448,9 +448,9 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
             user.attempts = (user.attempts or 0) + 1
             if user.attempts >= 5:
                 user.locked = True
-                user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+                user.locked_until = datetime.now() + timedelta(minutes=1)
                 db.commit()
-                raise HTTPException(status_code=403, detail="Conta bloqueada após 5 tentativas. Aguarde 15 minutos.")
+                raise HTTPException(status_code=403, detail="Conta bloqueada após 5 tentativas. Aguarde 1 minuto.")
             db.commit()
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
 

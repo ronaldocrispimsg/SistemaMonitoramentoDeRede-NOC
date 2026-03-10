@@ -6,6 +6,7 @@
   <title>NOC Lite</title>
 </head>
 <body>
+  <div id="toastContainer" class="toast-container"></div>
   <script>
     const token = localStorage.getItem("token");
     window.location.replace(token ? "dashboard.html" : "login.html");
