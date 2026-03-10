@@ -155,6 +155,13 @@ def _resolve_host_check_url(host: Host) -> str | None:
 
 
 def _snmp_is_configured(host: Host) -> bool:
+    if not bool(getattr(host, "snmp_enabled", False)):
+        logger.debug(
+            "SNMP ignorado para host=%s: snmp_enabled desativado",
+            host.name,
+        )
+        return False
+
     community = (host.snmp_community or "").strip().lower()
     if community == SNMP_ALLOWED_COMMUNITY:
         return True

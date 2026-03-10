@@ -52,7 +52,8 @@ class Host(Base):
     last_net_in_octets = Column(Float, nullable=True)
     last_net_out_octets = Column(Float, nullable=True)
     last_net_check = Column(DateTime, nullable=True)
-    snmp_community = Column(String, default="noc-lite")
+    snmp_enabled = Column(Boolean, default=False, nullable=False)
+    snmp_community = Column(String, nullable=True)
     last_snmp_check = Column(DateTime, nullable=True)
 
     sla_rolling_ping = Column(Float, nullable=True)

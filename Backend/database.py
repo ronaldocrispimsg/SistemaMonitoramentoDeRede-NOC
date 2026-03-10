@@ -132,6 +132,21 @@ def ensure_runtime_schema() -> None:
                                 "ALTER TABLE hosts ADD COLUMN baseline_pending BOOLEAN NOT NULL DEFAULT 1"
                             )
                         )
+                    if "snmp_enabled" not in col_names:
+                        conn.execute(
+                            text(
+                                "ALTER TABLE hosts ADD COLUMN snmp_enabled BOOLEAN NOT NULL DEFAULT 0"
+                            )
+                        )
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE hosts
+                                SET snmp_enabled = 1
+                                WHERE lower(trim(coalesce(snmp_community, ''))) = 'noc-lite'
+                                """
+                            )
+                        )
                 _SCHEMA_READY = True
                 break
             except OperationalError as exc:

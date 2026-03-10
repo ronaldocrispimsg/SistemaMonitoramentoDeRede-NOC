@@ -390,12 +390,14 @@ if (hostForm) {
         const addressInput = document.getElementById("address");
         const portInput = document.getElementById("port");
         const httpUrlInput = document.getElementById("http_url");
+        const snmpEnabledInput = document.getElementById("snmp_enabled");
 
         const data = {
             name: nameInput.value,
             address: addressInput.value,
             port: portInput.value ? parseInt(portInput.value) : null,
-            http_url: httpUrlInput.value
+            http_url: httpUrlInput.value,
+            snmp_enabled: !!snmpEnabledInput?.checked
         };
 
         try {
@@ -412,6 +414,7 @@ if (hostForm) {
                 addressInput.value = "";
                 portInput.value = "";
                 httpUrlInput.value = "";
+                if (snmpEnabledInput) snmpEnabledInput.checked = false;
                 loadHosts();
                 loadTrashHosts();
                 showToast("success", "Host cadastrado com sucesso.");
@@ -658,7 +661,7 @@ async function loadHosts() {
                         ${snmpButtonHtml}
                         <button onclick="toggleAvailabilityChartType('${h.name}')">Gráfico de disponibilidade por tipo</button>
                         <button onclick="toggleAvailabilityChart('${h.name}')">Gráfico de disponibilidade geral</button>
-                        <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}')">Editar</button>
+                        <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}', ${h.snmp_enabled ? "true" : "false"})">Editar</button>
                     </div>
                 </div>
 
@@ -914,13 +917,17 @@ async function toggleAvailabilityChartType(name) {
 
 let currentEditHost = null;
 
-function openEditModal(name, ip, port, httpUrl) {
+function openEditModal(name, ip, port, httpUrl, snmpEnabled = false) {
     currentEditHost = name;
 
     document.getElementById("modal-name").value = name;
     document.getElementById("modal-ip").value = ip;
     document.getElementById("modal-port").value = port;
     document.getElementById("modal-http-url").value = httpUrl || "";
+    const modalSnmpEnabled = document.getElementById("modal-snmp-enabled");
+    if (modalSnmpEnabled) {
+        modalSnmpEnabled.checked = !!snmpEnabled;
+    }
 
     document.getElementById("editModal").classList.remove("hidden");
 }
@@ -1109,6 +1116,7 @@ async function submitModalEdit() {
     const newIp = document.getElementById("modal-ip").value;
     const newPort = document.getElementById("modal-port").value;
     const newHttp = document.getElementById("modal-http-url").value;
+    const newSnmpEnabled = !!document.getElementById("modal-snmp-enabled")?.checked;
 
     const res = await fetchWithAuth(`${API}/host/update/${currentEditHost}`, {
         method: "PUT",
@@ -1116,7 +1124,8 @@ async function submitModalEdit() {
         body: JSON.stringify({
             address: newIp,
             port: newPort ? parseInt(newPort) : null,
-            http_url: newHttp || null
+            http_url: newHttp || null,
+            snmp_enabled: newSnmpEnabled
         })
     });
 

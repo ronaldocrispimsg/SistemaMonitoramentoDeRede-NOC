@@ -23,6 +23,12 @@ from Backend.security import verify_password, create_access_token, hash_password
 router = APIRouter()
 
 
+def _apply_snmp_policy(host: Host, snmp_enabled: bool) -> None:
+    enabled = bool(snmp_enabled)
+    host.snmp_enabled = enabled
+    host.snmp_community = "noc-lite" if enabled else None
+
+
 def _reset_host_operational_state(host: Host) -> None:
     host.baseline_pending = True
     host.status = "UNKNOWN"
@@ -168,6 +174,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
                 data.http_url,
                 data.port or existing_host.port
             )
+            _apply_snmp_policy(existing_host, data.snmp_enabled)
 
             db.commit()
             db.refresh(existing_host)
@@ -189,7 +196,8 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             status="UNKNOWN",
             status_ping="UNKNOWN",
             status_tcp="UNKNOWN",
-            snmp_community="noc-lite",
+            snmp_enabled=bool(data.snmp_enabled),
+            snmp_community="noc-lite" if data.snmp_enabled else None,
             hostname_resolved=resolved,
         )
 
@@ -473,6 +481,9 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
         data.http_url,
         data.port or host.port
     )
+
+    if data.snmp_enabled is not None:
+        _apply_snmp_policy(host, data.snmp_enabled)
 
     db.commit()
 

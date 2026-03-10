@@ -13,9 +13,11 @@ class HostUpdate(BaseModel):
     address: str
     port: Optional[int] = None
     http_url: Optional[str] = None
+    snmp_enabled: Optional[bool] = None
 
 class HostCreate(BaseModel):
     name: str
     address: str
     port: Optional[int] = None
     http_url: Optional[str] = None
+    snmp_enabled: bool = False
