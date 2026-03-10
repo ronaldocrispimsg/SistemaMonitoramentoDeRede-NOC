@@ -16,6 +16,10 @@ BASE
     --warning:#9a9a9a;
 }
 
+*{
+    box-sizing:border-box;
+}
+
 body{
     font-family: "Poppins", "Segoe UI", sans-serif;
     background:
@@ -82,6 +86,7 @@ LAYOUT DASHBOARD
     max-width:1200px;
     margin:28px auto 40px;
     padding:0 20px;
+    width:100%;
 }
 
 .dashboard-hero{
@@ -367,10 +372,12 @@ CARDS HOST
 
 .host-title{
     font-size:1.05rem;
+    overflow-wrap:anywhere;
 }
 
 .host-addr{
     color:#64748b;
+    overflow-wrap:anywhere;
 }
 
 .host-meta-grid{
@@ -387,17 +394,20 @@ CARDS HOST
     display:flex;
     flex-direction:column;
     gap:2px;
+    min-width:0;
 }
 
 .host-meta-item small{
     color:#64748b;
     font-size:0.74rem;
+    overflow-wrap:anywhere;
 }
 
 .host-meta-item strong{
     color:#334155;
     font-size:0.82rem;
     font-weight:600;
+    overflow-wrap:anywhere;
 }
 
 .metrics-section{
@@ -662,6 +672,7 @@ BOTÕES DOS CARDS
     width:100%;
     padding:5px 7px;
     font-size:0.76em;
+    min-height:36px;
     border-radius:6px;
     border:1px solid #d7dee8;
     background:#f9fafb;
@@ -804,6 +815,7 @@ MODAL
 
 .modal-content{
     width:320px;
+    max-width:92vw;
     background:white;
     padding:30px;
     border-radius:10px;
@@ -813,6 +825,7 @@ MODAL
 
 .modal-content input{
     width: 300px;;
+    max-width:100%;
     margin:8px 0;
     padding:10px;
     border-radius:6px;
@@ -821,6 +834,7 @@ MODAL
 
 .modal-actions button{
     width: 320px;;
+    max-width:100%;
     margin-top:10px;
     padding:10px;
     border-radius:6px;
@@ -919,7 +933,7 @@ input[type=number]{
     border:1px solid #d1d5db;
 }
 
-@media (max-width: 960px){
+@media (max-width: 992px){
     .dashboard-hero-top{
         flex-direction:column;
     }
@@ -952,11 +966,6 @@ input[type=number]{
         gap:8px;
     }
 
-    .host-top-line{
-        flex-direction:column;
-        align-items:flex-start;
-    }
-
     .host-card-body{
         grid-template-columns: 1fr;
     }
@@ -969,8 +978,92 @@ input[type=number]{
         grid-template-columns: 1fr;
     }
 
-    .snmp-kpi-grid{
+    .summary-grid{
+        grid-template-columns: repeat(3, minmax(140px, 1fr));
+    }
+
+    #alert-container{
+        width:calc(100vw - 24px);
+        right:12px;
+        bottom:12px;
+    }
+}
+
+@media (max-width: 768px){
+    .container{
+        padding:0 12px;
+    }
+
+    .panel-section{
+        padding:14px 12px;
+    }
+
+    .overview-card{
+        padding:12px;
+    }
+
+    .summary-grid{
+        grid-template-columns: repeat(2, minmax(130px, 1fr));
+    }
+
+    #hostForm{
         grid-template-columns: 1fr;
+    }
+
+    #hostForm button{
+        grid-column: span 1;
+    }
+
+    .top-actions{
+        width:100%;
+        flex-wrap:wrap;
+    }
+
+    .top-actions button{
+        flex:1 1 calc(50% - 6px);
+        min-height:40px;
+    }
+
+    .card{
+        width:100%;
+        margin:10px 0;
+        padding:12px;
+    }
+
+    .host-top-line{
+        flex-wrap:wrap;
+        align-items:flex-start;
+        gap:6px 10px;
+    }
+
+    .host-title{
+        font-size:1rem;
+    }
+
+    .host-addr{
+        display:block;
+        font-size:0.8rem;
+        margin-top:2px;
+    }
+
+    .host-card-body{
+        gap:8px;
+    }
+
+    .host-meta-grid{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .host-meta-item{
+        padding:7px 8px;
+    }
+
+    .network-split{
+        grid-template-columns: 1fr;
+    }
+
+    .snmp-kpi-grid{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .snmp-traffic-row{
@@ -982,19 +1075,59 @@ input[type=number]{
         width:100%;
     }
 
-    .summary-grid{
-        grid-template-columns: repeat(2, minmax(140px, 1fr));
+    .button-group{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap:6px;
     }
 
-    #alert-container{
-        width:calc(100vw - 24px);
-        right:12px;
-        bottom:12px;
+    .button-group button{
+        min-height:40px;
+        font-size:0.8em;
+    }
+
+    .chart-box{
+        padding:8px 8px 6px;
+    }
+
+    .login-box{
+        width:min(320px, 92vw);
+        padding:20px;
+    }
+
+    .login-box input,
+    .login-box button{
+        width:100%;
+    }
+
+    .modal-content{
+        width:min(320px, 92vw);
+        padding:20px;
+    }
+
+    .modal-content input,
+    .modal-actions button{
+        width:100%;
     }
 }
 
-@media (max-width: 560px){
+@media (max-width: 480px){
+    .summary-grid{
+        grid-template-columns: 1fr;
+    }
+
+    .top-actions button{
+        flex:1 1 100%;
+    }
+
     .host-meta-grid{
+        grid-template-columns: 1fr;
+    }
+
+    .snmp-kpi-grid{
+        grid-template-columns: 1fr;
+    }
+
+    .button-group{
         grid-template-columns: 1fr;
     }
 }
