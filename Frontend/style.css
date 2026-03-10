@@ -367,16 +367,35 @@ CARDS HOST
 
 .snmp-section{
     background:#f8fafc;
-    padding:10px;
-    border-radius:8px;
     border:1px solid #e2e8f0;
+    border-radius:10px;
+    padding:12px;
 }
 
-.snmp-grid{
+/* Header do card SNMP */
+.snmp-header{
+    margin-bottom:10px;
+}
+
+.snmp-title{
+    font-weight:700;
+    font-size:0.92rem;
+    color:#334155;
+    line-height:1.1;
+}
+
+.snmp-subtitle{
+    margin-top:2px;
+    font-size:0.76rem;
+    color:#64748b;
+}
+
+/* Linha superior de mini-cards (CPU / RAM / Disco) */
+.snmp-kpi-grid{
     display:grid;
-    grid-template-columns: repeat(2, minmax(140px, 1fr));
-    gap:6px 14px;
-    margin-top:6px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap:10px;
+    margin-bottom:10px;
 }
 
 .network-split{
@@ -392,21 +411,36 @@ CARDS HOST
     gap:3px;
 }
 
-.snmp-metric-card{
+.snmp-kpi-card{
     border:1px solid #d7dce2;
     border-radius:8px;
-    padding:6px 8px;
+    padding:8px;
     background:#fff;
 }
 
-.snmp-metric-head{
+.snmp-kpi-head{
     display:flex;
     justify-content:space-between;
-    gap:8px;
-    margin-bottom:5px;
+    align-items:flex-start;
+    gap:10px;
+    margin-bottom:6px;
 }
 
-.metric-bar{
+.snmp-kpi-label{
+    color:#475569;
+    text-align:left;
+    line-height:1.15;
+}
+
+.snmp-kpi-value{
+    min-width:58px;
+    text-align:right;
+    font-weight:700;
+    color:#475569;
+    white-space:nowrap;
+}
+
+.snmp-kpi-bar{
     width:100%;
     height:6px;
     background:#eceff3;
@@ -414,10 +448,61 @@ CARDS HOST
     overflow:hidden;
 }
 
-.metric-fill{
+.snmp-kpi-fill{
     display:block;
     height:100%;
     border-radius:999px;
+}
+
+.snmp-kpi-fill.metric-ok{ background:#9ca3af; }
+.snmp-kpi-fill.metric-warn{ background:#7f7f7f; }
+.snmp-kpi-fill.metric-critical{ background:#555555; }
+.snmp-kpi-fill.metric-neutral{ background:#c4c4c4; }
+
+/* Área inferior de tráfego (3 linhas) */
+.snmp-traffic-panel{
+    display:grid;
+    gap:6px;
+    border:1px solid #d9e1ea;
+    border-radius:10px;
+    background:#fff;
+    padding:8px 10px;
+}
+
+.snmp-traffic-row{
+    display:grid;
+    grid-template-columns: 112px minmax(0, 1fr) max-content;
+    align-items:center;
+    gap:8px;
+}
+
+.snmp-traffic-label{
+    font-size:0.76rem;
+    color:#475569;
+    text-align:left;
+    white-space:nowrap;
+}
+
+.snmp-traffic-value{
+    font-size:0.76rem;
+    color:#334155;
+    text-align:right;
+    white-space:nowrap;
+}
+
+.snmp-mini-bar{
+    width:100%;
+    height:7px;
+    border-radius:999px;
+    background:#eceff3;
+    overflow:hidden;
+}
+
+.snmp-mini-bar span{
+    display:block;
+    height:100%;
+    border-radius:999px;
+    background:linear-gradient(90deg, #94a3b8 0%, #64748b 100%);
 }
 
 /* =========================
@@ -772,6 +857,19 @@ input[type=number]{
 
     .network-split{
         grid-template-columns: 1fr;
+    }
+
+    .snmp-kpi-grid{
+        grid-template-columns: 1fr;
+    }
+
+    .snmp-traffic-row{
+        grid-template-columns: 1fr;
+        gap:4px;
+    }
+
+    .snmp-mini-bar{
+        width:100%;
     }
 
     .summary-grid{

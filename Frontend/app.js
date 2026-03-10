@@ -260,6 +260,13 @@ async function loadHosts() {
             const availability10m = h.availability_10m != null
                 ? h.availability_10m.toFixed(2)
                 : "N/A";
+            const totalTrafficBps = Number(h.network_traffic) || 0;
+            const downloadTrafficBps = Number(h.network_in_bps) || 0;
+            const uploadTrafficBps = Number(h.network_out_bps) || 0;
+            const maxTrafficBps = Math.max(totalTrafficBps, downloadTrafficBps, uploadTrafficBps, 1);
+            const totalTrafficBar = calcRelativeBarWidth(totalTrafficBps, maxTrafficBps);
+            const downloadTrafficBar = calcRelativeBarWidth(downloadTrafficBps, maxTrafficBps);
+            const uploadTrafficBar = calcRelativeBarWidth(uploadTrafficBps, maxTrafficBps);
             const snmpConfigured = [
                 h.cpu_usage,
                 h.ram_usage,
@@ -273,32 +280,49 @@ async function loadHosts() {
                 : "";
             const snmpSectionHtml = snmpConfigured ? `
                         <div class="metrics-section snmp-section">
-                            <div class="metrics-title">SNMP</div>
-                            <div class="snmp-grid">
-                                <div class="snmp-metric-card">
-                                    <div class="snmp-metric-head">
-                                        <small>CPU</small>
-                                        <small class="${metricClass(h.cpu_usage)}">${metricPercent(h.cpu_usage)}</small>
+                            <div class="snmp-header">
+                                <div class="snmp-title">SNMP</div>
+                                <div class="snmp-subtitle">Métricas estimadas via OIDs</div>
+                            </div>
+                            <div class="snmp-kpi-grid">
+                                <div class="snmp-kpi-card">
+                                    <div class="snmp-kpi-head">
+                                        <small class="snmp-kpi-label">CPU</small>
+                                        <small class="snmp-kpi-value ${metricClass(h.cpu_usage)}">${metricPercent(h.cpu_usage)}</small>
                                     </div>
-                                    <div class="metric-bar"><span class="metric-fill ${metricClass(h.cpu_usage)}" style="width:${metricBarWidth(h.cpu_usage)}%"></span></div>
+                                    <div class="snmp-kpi-bar"><span class="snmp-kpi-fill ${metricClass(h.cpu_usage)}" style="width:${metricBarWidth(h.cpu_usage)}%"></span></div>
                                 </div>
-                                <div class="snmp-metric-card">
-                                    <div class="snmp-metric-head">
-                                        <small>RAM estimada</small>
-                                        <small class="${metricClass(h.ram_usage)}">${metricPercent(h.ram_usage)}</small>
+                                <div class="snmp-kpi-card">
+                                    <div class="snmp-kpi-head">
+                                        <small class="snmp-kpi-label">RAM</small>
+                                        <small class="snmp-kpi-value ${metricClass(h.ram_usage)}">${metricPercent(h.ram_usage)}</small>
                                     </div>
-                                    <div class="metric-bar"><span class="metric-fill ${metricClass(h.ram_usage)}" style="width:${metricBarWidth(h.ram_usage)}%"></span></div>
+                                    <div class="snmp-kpi-bar"><span class="snmp-kpi-fill ${metricClass(h.ram_usage)}" style="width:${metricBarWidth(h.ram_usage)}%"></span></div>
                                 </div>
-                                <div class="snmp-metric-card">
-                                    <div class="snmp-metric-head">
-                                        <small>Disco</small>
-                                        <small class="${metricClass(h.disk_usage, 85, 95)}">${metricPercent(h.disk_usage)}</small>
+                                <div class="snmp-kpi-card">
+                                    <div class="snmp-kpi-head">
+                                        <small class="snmp-kpi-label">Disco</small>
+                                        <small class="snmp-kpi-value ${metricClass(h.disk_usage, 85, 95)}">${metricPercent(h.disk_usage)}</small>
                                     </div>
-                                    <div class="metric-bar"><span class="metric-fill ${metricClass(h.disk_usage, 85, 95)}" style="width:${metricBarWidth(h.disk_usage)}%"></span></div>
+                                    <div class="snmp-kpi-bar"><span class="snmp-kpi-fill ${metricClass(h.disk_usage, 85, 95)}" style="width:${metricBarWidth(h.disk_usage)}%"></span></div>
                                 </div>
-                                <div><small>Rede total: ${formatBps(h.network_traffic)}</small></div>
-                                <div><small>Download (RX): ${formatBps(h.network_in_bps)}</small></div>
-                                <div><small>Upload (TX): ${formatBps(h.network_out_bps)}</small></div>
+                            </div>
+                            <div class="snmp-traffic-panel">
+                                <div class="snmp-traffic-row">
+                                    <small class="snmp-traffic-label">Tráfego de Rede</small>
+                                    <div class="snmp-mini-bar"><span style="width:${totalTrafficBar}%"></span></div>
+                                    <small class="snmp-traffic-value">${formatBps(h.network_traffic)}</small>
+                                </div>
+                                <div class="snmp-traffic-row">
+                                    <small class="snmp-traffic-label">Download (RX)</small>
+                                    <div class="snmp-mini-bar"><span style="width:${downloadTrafficBar}%"></span></div>
+                                    <small class="snmp-traffic-value">${formatBps(h.network_in_bps)}</small>
+                                </div>
+                                <div class="snmp-traffic-row">
+                                    <small class="snmp-traffic-label">Upload (TX)</small>
+                                    <div class="snmp-mini-bar"><span style="width:${uploadTrafficBar}%"></span></div>
+                                    <small class="snmp-traffic-value">${formatBps(h.network_out_bps)}</small>
+                                </div>
                             </div>
                         </div>
             ` : "";
@@ -661,6 +685,14 @@ function formatBps(value) {
     if (bps < 1000_000_000) return `${(bps / 1000_000).toFixed(2)} Mbps`;
 
     return `${(bps / 1000_000_000).toFixed(2)} Gbps`;
+}
+
+function calcRelativeBarWidth(value, maxValue) {
+    const current = Number(value);
+    const max = Number(maxValue);
+    if (!Number.isFinite(current) || current <= 0 || !Number.isFinite(max) || max <= 0) return 0;
+    const ratio = (current / max) * 100;
+    return Math.max(8, Math.min(100, ratio));
 }
 
 function metricClass(value, warn = 80, critical = 95) {
