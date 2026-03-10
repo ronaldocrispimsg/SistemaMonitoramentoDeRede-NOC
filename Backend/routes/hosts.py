@@ -19,11 +19,34 @@ from Backend.security import verify_password, create_access_token, hash_password
 
 router = APIRouter()
 
+def _is_icmp_blocked_but_service_up(
+    host: Host,
+    last_ping: CheckResult | None,
+    last_tcp: CheckResult | None,
+    last_http: CheckResult | None,
+) -> bool:
+    if not last_ping or last_ping.success:
+        return False
+
+    tcp_ok = host.port is not None and bool(last_tcp and last_tcp.success)
+    http_ok = bool(last_http and last_http.success)
+    return tcp_ok or http_ok
+
 def infer_probable_cause(db: Session, host: Host) -> str:
     last_dns = get_last_check(db, host.id, "dns")
     last_ping = get_last_check(db, host.id, "ping")
     last_tcp = get_last_check(db, host.id, "tcp")
     last_http = get_last_check(db, host.id, "http")
+    icmp_blocked_but_service_up = _is_icmp_blocked_but_service_up(
+        host,
+        last_ping,
+        last_tcp,
+        last_http,
+    )
+    host.icmp_blocked_but_service_up = icmp_blocked_but_service_up
+
+    if icmp_blocked_but_service_up:
+        return "ICMP bloqueado por firewall\nServiço operando normalmente"
 
     if host.status == "DOWN":
         if last_dns and not last_dns.success:
@@ -119,11 +142,19 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
 @router.get("/hosts/list")
 def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     hosts = db.query(Host).filter(Host.active == True).all()
+    open_incident_hosts = {
+        row[0]
+        for row in db.query(Incident.host_name)
+        .filter(Incident.status == "OPEN")
+        .all()
+    }
     
     # Métricas em tempo real no objeto antes de enviar
     for h in hosts:
         h.availability_10m = availability_last_10_min(db, h.name)
         h.probable_cause = infer_probable_cause(db, h)
+        h.icmp_blocked_but_service_up = bool(getattr(h, "icmp_blocked_but_service_up", False))
+        h.has_open_incident = h.name in open_incident_hosts
         
     return hosts
 
@@ -150,6 +181,12 @@ def check_host(host_name: str, db: Session = Depends(get_db), user: User = Depen
     if host.port is not None:
         tcp_result = tcp_check(ip, host.port)
 
+    icmp_blocked_but_service_up = (
+        not ping_result["success"] and
+        tcp_result is not None and
+        tcp_result.get("success")
+    )
+
     host.status_ping = "UP" if ping_result["success"] else "DOWN"
     host.latency_ping = ping_result["latency"]
     
@@ -162,7 +199,10 @@ def check_host(host_name: str, db: Session = Depends(get_db), user: User = Depen
 
     host.last_check = datetime.now()
 
-    if host.status_ping == "DOWN":
+    if icmp_blocked_but_service_up:
+        host.status = "UP"
+
+    elif host.status_ping == "DOWN":
         host.status = "DOWN"
 
     elif host.status_tcp == "DOWN":
@@ -177,6 +217,7 @@ def check_host(host_name: str, db: Session = Depends(get_db), user: User = Depen
     "host": host.name,
     "address": host.address,
     "status": host.status,
+    "icmp_blocked_but_service_up": icmp_blocked_but_service_up,
     "ping": {
         "status": host.status_ping,
         "latency": host.latency_ping
@@ -277,6 +318,7 @@ def list_alerts(db: Session = Depends(get_db), user: str = Depends(get_current_u
     for alert, host in rows:
         availability_10m = availability_last_10_min(db, host.name)
         probable_cause = infer_probable_cause(db, host)
+        icmp_blocked_but_service_up = bool(getattr(host, "icmp_blocked_but_service_up", False))
 
         result.append({
             "host_id": alert.host_id,
@@ -307,6 +349,7 @@ def list_alerts(db: Session = Depends(get_db), user: str = Depends(get_current_u
             "last_check": host.last_check.isoformat() if host.last_check else None,
             "last_snmp_check": host.last_snmp_check.isoformat() if host.last_snmp_check else None,
             "probable_cause": probable_cause,
+            "icmp_blocked_but_service_up": icmp_blocked_but_service_up,
         })
 
     return result

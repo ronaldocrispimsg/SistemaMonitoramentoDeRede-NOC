@@ -330,6 +330,27 @@ CARDS HOST
     box-shadow:0 14px 24px rgba(15, 23, 42, 0.08);
 }
 
+.card.card-state-up{
+    border-left:4px solid #22c55e;
+    background:linear-gradient(180deg, #ffffff 0%, #fbfffc 100%);
+}
+
+.card.card-state-degraded{
+    border-left:4px solid #f59e0b;
+    background:linear-gradient(180deg, #ffffff 0%, #fffdf7 100%);
+}
+
+.card.card-state-down{
+    border-left:4px solid #ef4444;
+    background:linear-gradient(180deg, #ffffff 0%, #fff8f8 100%);
+}
+
+.card.card-state-critical{
+    border-left:4px solid #dc2626;
+    box-shadow:0 10px 20px rgba(220, 38, 38, 0.14);
+    background:linear-gradient(180deg, #ffffff 0%, #fff5f5 100%);
+}
+
 /* Estrutura principal do card de host */
 .host-card-header{
     display:flex;
@@ -371,15 +392,16 @@ CARDS HOST
 
 .host-top-line{
     display:flex;
-    justify-content:flex-start;
-    align-items:center;
+    justify-content:space-between;
+    align-items:flex-start;
     gap:10px;
 }
 
 .host-title-wrap{
     display:flex;
     align-items:center;
-    gap:6px;
+    gap:8px;
+    min-width:0;
 }
 
 .host-title{
@@ -390,6 +412,59 @@ CARDS HOST
 .host-addr{
     color:#64748b;
     overflow-wrap:anywhere;
+}
+
+.host-state-badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:74px;
+    padding:2px 8px;
+    border-radius:999px;
+    font-size:0.7rem;
+    font-weight:700;
+    letter-spacing:0.03em;
+    border:1px solid transparent;
+    flex-shrink:0;
+}
+
+.host-state-badge.state-up{
+    color:#166534;
+    background:#ecfdf3;
+    border-color:#bbf7d0;
+}
+
+.host-state-badge.state-degraded{
+    color:#92400e;
+    background:#fffbeb;
+    border-color:#fde68a;
+}
+
+.host-state-badge.state-down{
+    color:#991b1b;
+    background:#fef2f2;
+    border-color:#fecaca;
+}
+
+.host-state-badge.state-critical{
+    color:#7f1d1d;
+    background:#fee2e2;
+    border-color:#fca5a5;
+}
+
+.incident-badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    white-space:nowrap;
+    border-radius:999px;
+    border:1px solid #fecaca;
+    background:#fff1f2;
+    color:#b91c1c;
+    font-size:0.68rem;
+    font-weight:700;
+    letter-spacing:0.04em;
+    padding:3px 8px;
 }
 
 .host-meta-grid{
@@ -453,6 +528,35 @@ CARDS HOST
 .host-summary-list small{
     color:#475569;
     line-height:1.25;
+}
+
+.cause-pill{
+    display:block;
+    width:100%;
+    border-radius:8px;
+    padding:5px 8px;
+    border:1px solid #dbe2ea;
+    background:#f8fafc;
+    font-size:0.8rem;
+    white-space:pre-line;
+}
+
+.cause-pill.cause-normal{
+    color:#334155;
+    border-color:#dbe2ea;
+    background:#f8fafc;
+}
+
+.cause-pill.cause-warning{
+    color:#92400e;
+    border-color:#fde68a;
+    background:#fffbeb;
+}
+
+.cause-pill.cause-critical{
+    color:#991b1b;
+    border-color:#fecaca;
+    background:#fef2f2;
 }
 
 .snmp-section{
@@ -923,11 +1027,80 @@ TIMELINE INCIDENTES
 }
 
 .timeline-item{
-    padding:10px;
-    border-left:3px solid #cbd5e1;
-    margin-bottom:10px;
+    padding:11px 12px;
+    border-left:4px solid #cbd5e1;
+    margin-bottom:9px;
     background:white;
-    border-radius:0 4px 4px 0;
+    border-radius:8px;
+}
+
+.timeline-item-top{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:8px;
+}
+
+.timeline-host{
+    color:#0f172a;
+    font-size:0.92rem;
+}
+
+.timeline-badge{
+    border-radius:999px;
+    padding:2px 8px;
+    font-size:0.7rem;
+    font-weight:700;
+    border:1px solid transparent;
+    white-space:nowrap;
+}
+
+.timeline-badge-open{
+    color:#991b1b;
+    background:#fef2f2;
+    border-color:#fecaca;
+}
+
+.timeline-badge-closed{
+    color:#166534;
+    background:#f0fdf4;
+    border-color:#bbf7d0;
+}
+
+.timeline-item-open{
+    border-left-color:#ef4444;
+}
+
+.timeline-item-closed{
+    border-left-color:#22c55e;
+}
+
+.timeline-item-meta{
+    margin-top:6px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px 12px;
+}
+
+.timeline-item-meta small{
+    color:#475569;
+    font-size:0.78rem;
+}
+
+.timeline-reason{
+    margin:7px 0 0 0;
+    color:#334155;
+    font-size:0.83rem;
+    line-height:1.35;
+}
+
+.timeline-empty{
+    border:1px dashed #cbd5e1;
+    background:#ffffff;
+    border-radius:8px;
+    padding:14px;
+    color:#64748b;
+    text-align:center;
 }
 
 .timeline-item.text-danger{ border-left-color:#ef4444; }
@@ -1094,6 +1267,14 @@ input[type=number]{
         gap:6px 10px;
     }
 
+    .host-title-wrap{
+        flex-wrap:wrap;
+    }
+
+    .incident-badge{
+        margin-left:auto;
+    }
+
     .host-title{
         font-size:1rem;
     }
@@ -1193,5 +1374,10 @@ input[type=number]{
 
     .button-group{
         grid-template-columns: 1fr;
+    }
+
+    .timeline-item-top{
+        flex-direction:column;
+        align-items:flex-start;
     }
 }

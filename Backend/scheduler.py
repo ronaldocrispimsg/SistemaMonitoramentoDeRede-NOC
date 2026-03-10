@@ -319,6 +319,13 @@ def check_all_hosts():
                 host.slope_http = calc_latency_trend_http(db, host.id, 10)
                 host.trend_http = classify_trend_http(host.slope_http)
 
+                # ICMP pode ser bloqueado por firewall; nesse caso não usar métricas de ping para severidade.
+                if service_up_without_icmp:
+                    host.sla_rolling_ping = None
+                    host.jitter_ms_ping = None
+                    host.slope = None
+                    host.trend = "UNKNOWN"
+
     
                 host.severity = refine_severity(
                     host.severity,
@@ -327,7 +334,8 @@ def check_all_hosts():
                     host.sla_rolling_http,
                     host.jitter_ms_ping,
                     host.jitter_ms_tcp,
-                    host.jitter_ms_http
+                    host.jitter_ms_http,
+                    ignore_ping_metrics=service_up_without_icmp
                 )
 
                 snmp_data = None
@@ -345,7 +353,11 @@ def check_all_hosts():
                             else:
                                 register_snmp_failure(host.id, host.name)
 
-                preventive_severity, preventive_reasons = apply_preventive_logic(host, snmp_data)
+                preventive_severity, preventive_reasons = apply_preventive_logic(
+                    host,
+                    snmp_data,
+                    ignore_ping_metrics=service_up_without_icmp
+                )
 
                 host.severity = max_severity(host.severity, preventive_severity)
 

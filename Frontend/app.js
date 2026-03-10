@@ -2,6 +2,58 @@ const API = "http://127.0.0.1:8000";
 const charts = {};
 const MAX_POINTS_PER_SERIES = 100;
 let authRedirectScheduled = false;
+let lastUserInteractionAt = 0;
+
+const POLLING_INTERVALS = {
+    visible: { lightMs: 5000, heavyMs: 20000 },
+    hidden: { lightMs: 30000, heavyMs: 120000 }
+};
+
+const pollingState = {
+    lightTimer: null,
+    heavyTimer: null,
+    runningTasks: new Set()
+};
+
+const recentAlertCache = new Map();
+const ALERT_DEDUP_WINDOW_MS = 45000;
+const SEEN_ALERTS_STORAGE_KEY = "noclite_seen_alerts_v1";
+const MAX_SEEN_ALERTS = 200;
+
+function loadSeenAlertKeys() {
+    try {
+        const raw = localStorage.getItem(SEEN_ALERTS_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter((v) => typeof v === "string").slice(-MAX_SEEN_ALERTS);
+    } catch (err) {
+        return [];
+    }
+}
+
+let seenAlertKeysList = loadSeenAlertKeys();
+const seenAlertKeysSet = new Set(seenAlertKeysList);
+let seenAlertsBootstrapped = seenAlertKeysList.length > 0;
+
+function persistSeenAlertKeys() {
+    try {
+        localStorage.setItem(SEEN_ALERTS_STORAGE_KEY, JSON.stringify(seenAlertKeysList.slice(-MAX_SEEN_ALERTS)));
+    } catch (err) {
+        // Ignora falha de storage para não quebrar o fluxo de alertas.
+    }
+}
+
+function rememberSeenAlert(alertKey) {
+    if (seenAlertKeysSet.has(alertKey)) return;
+    seenAlertKeysSet.add(alertKey);
+    seenAlertKeysList.push(alertKey);
+    if (seenAlertKeysList.length > MAX_SEEN_ALERTS) {
+        const overflow = seenAlertKeysList.length - MAX_SEEN_ALERTS;
+        const removed = seenAlertKeysList.splice(0, overflow);
+        removed.forEach((k) => seenAlertKeysSet.delete(k));
+    }
+}
 
 if (Notification.permission !== "granted") {
     Notification.requestPermission();
@@ -35,6 +87,79 @@ function showToast(type, message, duration = 3200) {
         toast.classList.add("hide");
         setTimeout(() => toast.remove(), 240);
     }, duration);
+}
+
+function touchUserInteraction() {
+    lastUserInteractionAt = Date.now();
+}
+
+function isUserActivelyInteracting(windowMs = 3500) {
+    return Date.now() - lastUserInteractionAt < windowMs;
+}
+
+function hasBlockingUiOpen() {
+    const openModal = document.querySelector(".modal:not(.hidden)");
+    return Boolean(openModal);
+}
+
+function shouldDeferHeavyRefresh() {
+    return hasBlockingUiOpen() || isUserActivelyInteracting();
+}
+
+async function runTaskOnce(taskName, taskFn) {
+    if (pollingState.runningTasks.has(taskName)) return;
+    pollingState.runningTasks.add(taskName);
+    try {
+        await taskFn();
+    } finally {
+        pollingState.runningTasks.delete(taskName);
+    }
+}
+
+async function runLightRefresh() {
+    await Promise.all([
+        runTaskOnce("hosts-quick", loadHostsQuick),
+        runTaskOnce("alerts", checkAlerts),
+        runTaskOnce("summary", loadDashboardSummary)
+    ]);
+}
+
+async function runHeavyRefresh() {
+    if (shouldDeferHeavyRefresh()) return;
+    await Promise.all([
+        runTaskOnce("hosts-full", loadHosts),
+        runTaskOnce("timeline", loadTimeline)
+    ]);
+}
+
+function clearDashboardPolling() {
+    if (pollingState.lightTimer) {
+        clearInterval(pollingState.lightTimer);
+        pollingState.lightTimer = null;
+    }
+    if (pollingState.heavyTimer) {
+        clearInterval(pollingState.heavyTimer);
+        pollingState.heavyTimer = null;
+    }
+}
+
+function startDashboardPolling() {
+    if (isLoginPage) return;
+    clearDashboardPolling();
+
+    const visibilityMode = document.hidden ? "hidden" : "visible";
+    const config = POLLING_INTERVALS[visibilityMode];
+
+    pollingState.lightTimer = setInterval(runLightRefresh, config.lightMs);
+    pollingState.heavyTimer = setInterval(runHeavyRefresh, config.heavyMs);
+}
+
+function stopDashboardPolling() {
+    clearDashboardPolling();
+}
+
+function resumeDashboardPolling() {
+    startDashboardPolling();
 }
 
 // se estiver logado e abrir login → vai pro dashboard
@@ -316,7 +441,12 @@ async function loadHosts() {
 
         for (const h of hosts) {
             const card = document.createElement("div");
-            card.className = "card";
+            const visualState = hostVisualState(h);
+            const causeClass = probableCauseClass(h);
+            const incidentBadgeHtml = h.has_open_incident
+                ? `<span class="incident-badge" title="Existe incidente aberto para este host">INCIDENTE ABERTO</span>`
+                : "";
+            card.className = `card ${visualState.cardClass}`;
             card.id = `card-${h.name}`;
 
             let statusColor = "bg-secondary";
@@ -330,6 +460,9 @@ async function loadHosts() {
             else if (h.severity === "WARNING") sevClass = "sev-warning";
             else if (h.severity === "DEGRADED") sevClass = "sev-degraded";
             else if (h.severity === "CRITICAL") sevClass = "sev-critical";
+            const severityIndicatorHtml = h.icmp_blocked_but_service_up
+                ? ""
+                : `<span class="severity-indicator ${sevClass}">✚</span>`;
 
             const availability10m = h.availability_10m != null
                 ? h.availability_10m.toFixed(2)
@@ -423,10 +556,11 @@ async function loadHosts() {
                                 <small class="host-addr">(${h.address}${h.port ? ':' + h.port : ''})</small>
                             </strong>
                         </div>
+                        ${incidentBadgeHtml}
                     </div>
 
                     <div class="host-meta-grid">
-                        <div class="host-meta-item"><small>Saúde</small><strong>${h.health_score ?? "N/A"}% <span class="severity-indicator ${sevClass}">✚</span></strong></div>
+                        <div class="host-meta-item"><small>Saúde</small><strong>${h.health_score ?? "N/A"}% ${severityIndicatorHtml}</strong></div>
                         <div class="host-meta-item"><small>Disponibilidade</small><strong>${availability10m}%</strong></div>
                         <div class="host-meta-item"><small>Último check</small><strong>${formatCheckTime(h.last_check)}</strong></div>
                         <div class="host-meta-item"><small>Último SNMP</small><strong>${formatCheckTime(h.last_snmp_check)}</strong></div>
@@ -442,7 +576,8 @@ async function loadHosts() {
                                 <small><b>Saúde:</b> ${h.health_score ?? "N/A"}%</small>
                                 <small><b>Disponibilidade:</b> ${availability10m}%</small>
                                 <small><b>Tendência HTTP:</b> ${trendIcon(h.trend_http)} ${h.trend_http ?? "N/A"}</small>
-                                <small><b>Causa provável:</b> ${h.probable_cause ?? "Operação normal"}</small>
+                                <small><b>Causa provável:</b></small>
+                                <small class="cause-pill ${causeClass}">${h.probable_cause ?? "Operação normal"}</small>
                             </div>
                         </div>
                     </div>
@@ -1221,6 +1356,36 @@ function formatStatusLabel(status) {
     return status ?? "Desconhecido";
 }
 
+function hostVisualState(host) {
+    if (host?.icmp_blocked_but_service_up) {
+        return { cardClass: "card-state-up", badgeClass: "state-up", label: "UP" };
+    }
+
+    const status = String(host?.status || "").toUpperCase();
+    const severity = String(host?.severity || "").toUpperCase();
+
+    if (severity === "CRITICAL") {
+        return { cardClass: "card-state-critical", badgeClass: "state-critical", label: "CRITICAL" };
+    }
+    if (status === "DOWN") {
+        return { cardClass: "card-state-down", badgeClass: "state-down", label: "DOWN" };
+    }
+    if (status === "DEGRADED" || severity === "DEGRADED" || severity === "WARNING") {
+        return { cardClass: "card-state-degraded", badgeClass: "state-degraded", label: "DEGRADED" };
+    }
+    return { cardClass: "card-state-up", badgeClass: "state-up", label: "UP" };
+}
+
+function probableCauseClass(host) {
+    if (host?.icmp_blocked_but_service_up) return "cause-normal";
+
+    const status = String(host?.status || "").toUpperCase();
+    const severity = String(host?.severity || "").toUpperCase();
+    if (severity === "CRITICAL" || status === "DOWN") return "cause-critical";
+    if (status === "DEGRADED" || severity === "DEGRADED" || severity === "WARNING") return "cause-warning";
+    return "cause-normal";
+}
+
 function alertSeverityClass(severity) {
     const normalized = String(severity || "").toUpperCase();
     if (normalized === "HEALTHY") return "alert-sev-healthy";
@@ -1228,6 +1393,46 @@ function alertSeverityClass(severity) {
     if (normalized === "DEGRADED") return "alert-sev-degraded";
     if (normalized === "CRITICAL") return "alert-sev-critical";
     return "alert-sev-unknown";
+}
+
+function alertDedupeKey(alert) {
+    return [
+        String(alert.host_name || "").toLowerCase(),
+        String(alert.alert_type || "").toUpperCase(),
+        String(alert.old_status || "").toUpperCase(),
+        String(alert.new_status || "").toUpperCase()
+    ].join("|");
+}
+
+function alertSeenKey(alert) {
+    return [
+        String(alert.host_name || "").toLowerCase(),
+        String(alert.alert_type || "").toUpperCase(),
+        String(alert.timestamp || ""),
+        String(alert.old_status || "").toUpperCase(),
+        String(alert.new_status || "").toUpperCase()
+    ].join("|");
+}
+
+function shouldRenderAlertCard(alert) {
+    const key = alertDedupeKey(alert);
+    const now = Date.now();
+    const lastShownAt = recentAlertCache.get(key) || 0;
+
+    if (now - lastShownAt < ALERT_DEDUP_WINDOW_MS) {
+        return false;
+    }
+
+    recentAlertCache.set(key, now);
+
+    if (recentAlertCache.size > 250) {
+        for (const [cacheKey, ts] of recentAlertCache.entries()) {
+            if (now - ts > ALERT_DEDUP_WINDOW_MS * 3) {
+                recentAlertCache.delete(cacheKey);
+            }
+        }
+    }
+    return true;
 }
 
 function showAlertCard(alert) {
@@ -1336,13 +1541,43 @@ async function checkAlerts() {
     if (!res) return;
 
     const alerts = await res.json();
+    if (!Array.isArray(alerts) || alerts.length === 0) return;
 
-    alerts.forEach(a => {
-        if (!lastAlertTime || a.timestamp > lastAlertTime) {
-            showAlertCard(a);
-            lastAlertTime = a.timestamp;
+    if (!seenAlertsBootstrapped) {
+        alerts.forEach((a) => rememberSeenAlert(alertSeenKey(a)));
+        persistSeenAlertKeys();
+        seenAlertsBootstrapped = true;
+        lastAlertTime = alerts[0]?.timestamp || lastAlertTime;
+        return;
+    }
+
+    const ordered = [...alerts].reverse();
+    let newestSeen = lastAlertTime;
+    let storageChanged = false;
+
+    ordered.forEach((a) => {
+        const seenKey = alertSeenKey(a);
+        if (!newestSeen || a.timestamp > newestSeen) {
+            newestSeen = a.timestamp;
         }
+        if (seenAlertKeysSet.has(seenKey)) return;
+        if (!shouldRenderAlertCard(a)) {
+            rememberSeenAlert(seenKey);
+            storageChanged = true;
+            return;
+        }
+        showAlertCard(a);
+        rememberSeenAlert(seenKey);
+        storageChanged = true;
     });
+
+    if (storageChanged) {
+        persistSeenAlertKeys();
+    }
+
+    if (newestSeen && (!lastAlertTime || newestSeen > lastAlertTime)) {
+        lastAlertTime = newestSeen;
+    }
 }
 
 async function softDeleteHost(name) {
@@ -1439,23 +1674,42 @@ async function loadTimeline() {
         if (!res || !res.ok) return;
 
         const incidents = await res.json();
-        
-        container.innerHTML = incidents.map(inc => {
-            const isClosed = inc.status === "CLOSED";
-            const itemClass = isClosed ? "text-success" : "text-danger";
-            const timeStr = formatApiDateTime(inc.started_time);
-            const durationStr = inc.duration ? `(Duração: ${(inc.duration / 60).toFixed(1)} min)` : "(Ainda aberto)";
+        if (!Array.isArray(incidents) || incidents.length === 0) {
+            container.innerHTML = `<div class="timeline-empty">Sem incidentes recentes.</div>`;
+            return;
+        }
+
+        const ordered = [...incidents].sort(
+            (a, b) => new Date(b.started_time).getTime() - new Date(a.started_time).getTime()
+        );
+
+        container.innerHTML = ordered.map((inc) => {
+            const isClosed = String(inc.status || "").toUpperCase() === "CLOSED";
+            const statusLabel = isClosed ? "Recuperado" : "Incidente aberto";
+            const badgeClass = isClosed ? "timeline-badge-closed" : "timeline-badge-open";
+            const itemClass = isClosed ? "timeline-item-closed" : "timeline-item-open";
+            const startedAt = formatApiDateTime(inc.started_time);
+            const endedAt = inc.ended_time ? formatApiDateTime(inc.ended_time) : "Em andamento";
+            const durationText = inc.duration
+                ? `${Math.max(1, Math.round(inc.duration / 60))} min`
+                : "Em andamento";
+            const reasonText = inc.reason || "Sem causa provável informada.";
 
             return `
                 <div class="timeline-item ${itemClass}">
-                    <strong>${inc.host_name}</strong> - 
-                    <span>${isClosed ? "RECUPERADO" : "INDISPONÍVEL"}</span>
-                    <br>
-                    <small>${timeStr} ${durationStr}</small>
-                    <p style="margin: 4px 0 0 0; font-size: 0.85em; color: #666;">${inc.reason}</p>
+                    <div class="timeline-item-top">
+                        <strong class="timeline-host">${inc.host_name}</strong>
+                        <span class="timeline-badge ${badgeClass}">${statusLabel}</span>
+                    </div>
+                    <div class="timeline-item-meta">
+                        <small>Início: ${startedAt}</small>
+                        <small>Fim: ${endedAt}</small>
+                        <small>Duração: ${durationText}</small>
+                    </div>
+                    <p class="timeline-reason">${reasonText}</p>
                 </div>
             `;
-        }).join('');
+        }).join("");
     } catch (err) {
         console.error("Erro ao carregar timeline:", err);
     }
@@ -1524,20 +1778,33 @@ function filterHosts() {
 // ======================
 
 if (!isLoginPage) {
-    setInterval(loadHostsQuick, 5000);
-    setInterval(loadTimeline, 15000);
-    setInterval(checkAlerts, 5000);
-    setInterval(loadDashboardSummary, 10000);
-
     const refreshBtn = document.getElementById("refreshBtn");
     if (refreshBtn) {
-        refreshBtn.addEventListener("click", loadHosts);
+        refreshBtn.addEventListener("click", () => runTaskOnce("hosts-full", loadHosts));
     }
 
-    window.onload = () => {
-        loadDashboardSummary();
-        loadHosts();
-        loadTimeline();
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            stopDashboardPolling();
+            startDashboardPolling();
+            return;
+        }
+        resumeDashboardPolling();
+        runLightRefresh();
+        runHeavyRefresh();
+    });
+
+    ["pointerdown", "keydown", "input", "touchstart"].forEach((eventName) => {
+        document.addEventListener(eventName, touchUserInteraction, { passive: true });
+    });
+
+    window.onload = async () => {
+        touchUserInteraction();
+        await runTaskOnce("summary", loadDashboardSummary);
+        await runTaskOnce("hosts-full", loadHosts);
+        await runTaskOnce("timeline", loadTimeline);
+        await runTaskOnce("alerts", checkAlerts);
+        startDashboardPolling();
     };
 }
 

@@ -188,12 +188,22 @@ def calc_jitter_http(db, host_id, window=10):
 
     return round(sum(diffs) / len(diffs), 2)
 
-def refine_severity(base_severity, sla_ping=None, sla_tcp=None, sla_http=None, jitter_ping=None, jitter_tcp=None, jitter_http=None):
+def refine_severity(
+    base_severity,
+    sla_ping=None,
+    sla_tcp=None,
+    sla_http=None,
+    jitter_ping=None,
+    jitter_tcp=None,
+    jitter_http=None,
+    ignore_ping_metrics: bool = False
+):
     
     sev = base_severity
 
     # ---------- SLA pior manda ----------
-    slas = [s for s in (sla_ping, sla_tcp, sla_http) if s is not None]
+    sla_ping_effective = None if ignore_ping_metrics else sla_ping
+    slas = [s for s in (sla_ping_effective, sla_tcp, sla_http) if s is not None]
 
     if slas:
         worst_sla = min(slas)
@@ -204,7 +214,8 @@ def refine_severity(base_severity, sla_ping=None, sla_tcp=None, sla_http=None, j
             sev = "WARNING"
 
     # ---------- Jitter pior manda ----------
-    jitters = [j for j in (jitter_ping, jitter_tcp, jitter_http) if j is not None]
+    jitter_ping_effective = None if ignore_ping_metrics else jitter_ping
+    jitters = [j for j in (jitter_ping_effective, jitter_tcp, jitter_http) if j is not None]
 
     if jitters:
         worst_jitter = max(jitters)
@@ -368,7 +379,7 @@ def availability_last_10_min(db, host_name):
 
     return round(max(0, availability), 4)
 
-def apply_preventive_logic(host, snmp_data=None):
+def apply_preventive_logic(host, snmp_data=None, ignore_ping_metrics: bool = False):
     reasons = []
     preventive_severity = "HEALTHY"
 
@@ -381,8 +392,9 @@ def apply_preventive_logic(host, snmp_data=None):
         reasons.append("Serviço degradado")
 
     # ---------- SLA ----------
+    sla_ping = None if ignore_ping_metrics else host.sla_rolling_ping
     sla_values = [
-        host.sla_rolling_ping,
+        sla_ping,
         host.sla_rolling_tcp,
         host.sla_rolling_http
     ]
@@ -398,8 +410,9 @@ def apply_preventive_logic(host, snmp_data=None):
         reasons.append("SLA instável")
 
     # ---------- Jitter ----------
+    jitter_ping = None if ignore_ping_metrics else host.jitter_ms_ping
     jitter_values = [
-        host.jitter_ms_ping,
+        jitter_ping,
         host.jitter_ms_tcp,
         host.jitter_ms_http
     ]
@@ -415,7 +428,7 @@ def apply_preventive_logic(host, snmp_data=None):
         reasons.append("Jitter crítico")
 
     # ---------- Tendência ----------
-    if host.trend in ("SUBINDO", "PIORANDO", "UPWARD"):
+    if not ignore_ping_metrics and host.trend in ("SUBINDO", "PIORANDO", "UPWARD"):
         preventive_severity = max_severity(preventive_severity, "WARNING")
         reasons.append("Tendência de piora no ping")
 
