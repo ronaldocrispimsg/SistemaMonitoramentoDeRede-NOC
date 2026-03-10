@@ -235,6 +235,130 @@ button{
     background:var(--primary-dark);
 }
 
+.ports-field{
+    grid-column: span 4;
+    border:1px solid #d7dee8;
+    border-radius:8px;
+    background:#f8fafc;
+    padding:8px;
+    margin:4px;
+}
+
+.ports-field-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:6px;
+    color:#475569;
+    font-size:0.85rem;
+    font-weight:600;
+}
+
+.ports-help{
+    display:block;
+    margin:0 0 6px 0;
+    color:#64748b;
+    font-size:0.75rem;
+}
+
+.add-port-btn{
+    border:1px solid #cbd5e1;
+    border-radius:6px;
+    background:#ffffff;
+    color:#475569;
+    width:26px;
+    height:26px;
+    padding:0;
+    font-size:1rem;
+    font-weight:700;
+    line-height:1;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.add-port-btn:hover{
+    background:#eef2f7;
+}
+
+.ports-container{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+}
+
+.port-input-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+
+.port-input-row .port-input{
+    flex:1;
+    margin:0;
+}
+
+.remove-port-btn{
+    border:1px solid #d7dee8;
+    border-radius:6px;
+    background:#ffffff;
+    color:#64748b;
+    width:26px;
+    height:26px;
+    padding:0;
+    line-height:1;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.remove-port-btn:hover{
+    background:#f1f5f9;
+    color:#334155;
+}
+
+.tcp-ports-section{
+    margin-top:8px;
+}
+
+.tcp-ports-status{
+    display:flex;
+    flex-direction:column;
+    gap:1px;
+}
+
+.tcp-port-item{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:1px 0;
+    line-height:1.2;
+    min-width:0;
+}
+
+.tcp-port-item .status-indicator{
+    width:8px;
+    height:8px;
+    margin-right:4px;
+}
+
+.tcp-port-label{
+    color:#334155;
+    font-size:0.82rem;
+    font-weight:600;
+}
+
+.tcp-port-meta{
+    margin-left:auto;
+    color:#64748b;
+    font-size:0.78rem;
+}
+
+.tcp-ports-empty{
+    color:#64748b;
+    font-size:0.78rem;
+}
+
 .snmp-enable-field{
     display:flex;
     align-items:center;
@@ -1070,6 +1194,7 @@ HISTÓRICO
     margin-bottom:6px;
 }
 
+
 .chart-box canvas{
     width:100% !important;
     height:300px !important;
@@ -1530,6 +1655,10 @@ input[type=number]{
         grid-column: span 1;
     }
 
+    #hostForm .ports-field{
+        grid-column: span 1;
+    }
+
     #hostForm .snmp-enable-field{
         grid-column: span 1;
     }
@@ -1611,6 +1740,7 @@ input[type=number]{
     .chart-box{
         padding:8px 8px 6px;
     }
+
 
     .login-box{
         width:min(320px, 92vw);

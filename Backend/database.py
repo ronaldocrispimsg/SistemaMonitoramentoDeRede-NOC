@@ -132,6 +132,17 @@ def ensure_runtime_schema() -> None:
                                 "ALTER TABLE hosts ADD COLUMN baseline_pending BOOLEAN NOT NULL DEFAULT 1"
                             )
                         )
+                    if "tcp_ports" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN tcp_ports TEXT"))
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE hosts
+                                SET tcp_ports = '[' || CAST(port AS TEXT) || ']'
+                                WHERE port IS NOT NULL
+                                """
+                            )
+                        )
                     if "snmp_enabled" not in col_names:
                         conn.execute(
                             text(
@@ -147,6 +158,12 @@ def ensure_runtime_schema() -> None:
                                 """
                             )
                         )
+
+                    check_cols = conn.execute(text("PRAGMA table_info(checks)")).fetchall()
+                    if check_cols:
+                        check_col_names = {row[1] for row in check_cols}
+                        if "tcp_port" not in check_col_names:
+                            conn.execute(text("ALTER TABLE checks ADD COLUMN tcp_port INTEGER"))
                 _SCHEMA_READY = True
                 break
             except OperationalError as exc:

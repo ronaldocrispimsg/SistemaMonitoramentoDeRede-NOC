@@ -11,6 +11,7 @@ class Host(Base):
     name = Column(String, unique=True, index=True)
     address = Column(String)
     port = Column(Integer, nullable=True)
+    tcp_ports = Column(String, nullable=True)
     http_url = Column(String, nullable=True)
 
     active = Column(Boolean, default=True)
@@ -53,7 +54,7 @@ class Host(Base):
     last_net_out_octets = Column(Float, nullable=True)
     last_net_check = Column(DateTime, nullable=True)
     snmp_enabled = Column(Boolean, default=False, nullable=False)
-    snmp_community = Column(String, nullable=True)
+    snmp_community = Column(String, nullable=True, default=None)
     last_snmp_check = Column(DateTime, nullable=True)
 
     sla_rolling_ping = Column(Float, nullable=True)
@@ -86,6 +87,7 @@ class CheckResult(Base):
     latency = Column(Float, nullable=True)
     error = Column(String, nullable=True)
     status_code = Column(Integer, nullable=True)
+    tcp_port = Column(Integer, nullable=True)
     
     timestamp = Column(DateTime, default=datetime.utcnow)
 

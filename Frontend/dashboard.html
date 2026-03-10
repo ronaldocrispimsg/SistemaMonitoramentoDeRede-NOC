@@ -36,8 +36,15 @@
         <form id="hostForm">
             <input id="name" placeholder="Nome" required>
             <input id="address" placeholder="Endereço/IP" required>
-            <input id="port" type="number" min="1" max="65535" placeholder="Porta" required>
             <input id="http_url" placeholder="URL HTTP (opcional)">
+            <div id="portsField" class="ports-field">
+              <div class="ports-field-head">
+                <span>Portas TCP</span>
+                <button id="addPortBtn" type="button" class="add-port-btn" title="Adicionar porta" aria-label="Adicionar porta">+</button>
+              </div>
+              <small class="ports-help">Se não alterar, 80 e 443 serão monitoradas.</small>
+              <div id="portsContainer" class="ports-container"></div>
+            </div>
             <label class="snmp-enable-field snmp-enable-switch">
                 <input id="snmp_enabled" type="checkbox">
                 <span class="snmp-switch" aria-hidden="true"></span>
@@ -81,8 +88,15 @@
 
     <input id="modal-name" disabled>
     <input id="modal-ip">
-    <input id="modal-port">
     <input id="modal-http-url">
+    <div id="modalPortsField" class="ports-field">
+      <div class="ports-field-head">
+        <span>Portas TCP</span>
+        <button id="modalAddPortBtn" type="button" class="add-port-btn" title="Adicionar porta" aria-label="Adicionar porta">+</button>
+      </div>
+      <small class="ports-help">Se não alterar, 80 e 443 serão monitoradas.</small>
+      <div id="modalPortsContainer" class="ports-container"></div>
+    </div>
     <label class="snmp-enable-field snmp-enable-switch">
       <input id="modal-snmp-enabled" type="checkbox">
       <span class="snmp-switch" aria-hidden="true"></span>

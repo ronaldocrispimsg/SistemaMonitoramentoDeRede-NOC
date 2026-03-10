@@ -381,6 +381,117 @@ async function changePassword(){
 // Cadastrar Host (POST)
 // ======================
 const hostForm = document.getElementById("hostForm");
+const portsContainer = document.getElementById("portsContainer");
+const addPortBtn = document.getElementById("addPortBtn");
+
+function addPortInput(container, value = "", removable = false, placeholder = "Porta") {
+    if (!container) return;
+    const row = document.createElement("div");
+    row.className = "port-input-row";
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "1";
+    input.max = "65535";
+    input.placeholder = placeholder;
+    input.className = "port-input";
+    input.value = value === null || value === undefined ? "" : String(value);
+    row.appendChild(input);
+
+    if (removable) {
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "remove-port-btn";
+        removeBtn.title = "Remover porta";
+        removeBtn.textContent = "−";
+        removeBtn.addEventListener("click", () => row.remove());
+        row.appendChild(removeBtn);
+    }
+
+    container.appendChild(row);
+}
+
+function resetCreatePorts() {
+    if (!portsContainer) return;
+    portsContainer.innerHTML = "";
+    addPortInput(portsContainer, 80, false, "Porta");
+    addPortInput(portsContainer, 443, false, "Porta");
+    addPortInput(portsContainer, "", false, "Porta");
+}
+
+function setModalPorts(ports) {
+    const container = document.getElementById("modalPortsContainer");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const normalized = Array.isArray(ports)
+        ? ports
+            .map((p) => Number(p))
+            .filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535)
+        : [];
+
+    if (normalized.length === 0) {
+        addPortInput(container, "", false, "80");
+        addPortInput(container, "", false, "443");
+        addPortInput(container, "", false, "Porta");
+        return;
+    }
+
+    while (normalized.length < 3) normalized.push("");
+    normalized.forEach((value, index) => addPortInput(container, value, index >= 3, "Porta"));
+}
+
+function collectPorts(container) {
+    if (!container) return [];
+    const raw = Array.from(container.querySelectorAll(".port-input"))
+        .map((input) => String(input.value || "").trim())
+        .filter((value) => value !== "");
+
+    const seen = new Set();
+    const valid = [];
+    for (const value of raw) {
+        const port = Number(value);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            throw new Error(`Porta inválida: ${value}`);
+        }
+        if (seen.has(port)) continue;
+        seen.add(port);
+        valid.push(port);
+    }
+    valid.sort((a, b) => a - b);
+    return valid;
+}
+
+function parseHostPorts(host) {
+    if (Array.isArray(host?.ports)) {
+        return host.ports
+            .map((p) => Number(p))
+            .filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535);
+    }
+
+    if (typeof host?.tcp_ports === "string" && host.tcp_ports.trim()) {
+        try {
+            const parsed = JSON.parse(host.tcp_ports);
+            if (Array.isArray(parsed)) {
+                return parsed
+                    .map((p) => Number(p))
+                    .filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535);
+            }
+        } catch (_err) {}
+    }
+
+    const singlePort = Number(host?.port);
+    if (Number.isInteger(singlePort) && singlePort >= 1 && singlePort <= 65535) {
+        return [singlePort];
+    }
+
+    return [];
+}
+
+if (addPortBtn && portsContainer) {
+    addPortBtn.addEventListener("click", () => addPortInput(portsContainer, "", true));
+    resetCreatePorts();
+}
 
 if (hostForm) {
     hostForm.addEventListener("submit", async (e) => {
@@ -388,15 +499,23 @@ if (hostForm) {
 
         const nameInput = document.getElementById("name");
         const addressInput = document.getElementById("address");
-        const portInput = document.getElementById("port");
         const httpUrlInput = document.getElementById("http_url");
         const snmpEnabledInput = document.getElementById("snmp_enabled");
+        let ports = [];
+        try {
+            ports = collectPorts(portsContainer);
+        } catch (err) {
+            showToast("error", err.message || "Lista de portas inválida.");
+            return;
+        }
 
         const data = {
             name: nameInput.value,
             address: addressInput.value,
-            port: portInput.value ? parseInt(portInput.value) : null,
-            http_url: httpUrlInput.value,
+            ports,
+            port: ports.length ? ports[0] : null,
+            url: httpUrlInput.value || null,
+            http_url: httpUrlInput.value || null,
             snmp_enabled: !!snmpEnabledInput?.checked
         };
 
@@ -412,9 +531,9 @@ if (hostForm) {
             if (response.ok) {
                 nameInput.value = "";
                 addressInput.value = "";
-                portInput.value = "";
                 httpUrlInput.value = "";
                 if (snmpEnabledInput) snmpEnabledInput.checked = false;
+                resetCreatePorts();
                 loadHosts();
                 loadTrashHosts();
                 showToast("success", "Host cadastrado com sucesso.");
@@ -462,6 +581,10 @@ async function loadHosts() {
 
         for (const h of hosts) {
             const card = document.createElement("div");
+            const hostPorts = parseHostPorts(h);
+            const primaryPort = hostPorts.length ? hostPorts[0] : null;
+            const extraPortsCount = hostPorts.length > 1 ? hostPorts.length - 1 : 0;
+            const hostAddressLabel = `${h.address}${primaryPort ? ":" + primaryPort : ""}${extraPortsCount ? ` (+${extraPortsCount})` : ""}`;
             const visualState = hostVisualState(h);
             const causeClass = probableCauseClass(h);
             const incidentBadgeHtml = h.has_open_incident
@@ -574,7 +697,7 @@ async function loadHosts() {
                             <span class="status-indicator ${statusColor}"></span>
                             <strong class="host-title">
                                 ${h.name}
-                                <small class="host-addr">(${h.address}${h.port ? ':' + h.port : ''})</small>
+                                <small class="host-addr">(${hostAddressLabel})</small>
                             </strong>
                         </div>
                         <div class="host-top-actions">
@@ -635,6 +758,12 @@ async function loadHosts() {
                                     <i>Atualizando...</i>
                                 </div>
                             </div>
+                            <div class="tcp-ports-section">
+                                <div class="metrics-title">Portas TCP monitoradas</div>
+                                <div id="tcp-ports-status-${h.name}" class="tcp-ports-status">
+                                    <small class="tcp-ports-empty">Atualizando...</small>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -661,12 +790,12 @@ async function loadHosts() {
                         ${snmpButtonHtml}
                         <button onclick="toggleAvailabilityChartType('${h.name}')">Gráfico de disponibilidade por tipo</button>
                         <button onclick="toggleAvailabilityChart('${h.name}')">Gráfico de disponibilidade geral</button>
-                        <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}', ${h.snmp_enabled ? "true" : "false"})">Editar</button>
+                        <button onclick='openEditModal(${JSON.stringify(h.name)}, ${JSON.stringify(h.address)}, ${JSON.stringify(hostPorts)}, ${JSON.stringify(h.http_url || "")}, ${h.snmp_enabled ? "true" : "false"})'>Editar</button>
                     </div>
                 </div>
 
                 <div id="chart-container-${h.name}" class="chart-box hidden" style="margin-top: 10px;">
-                    <div class="chart-title">Latência por tipo</div>
+                    <div class="chart-title">Latência dos checks</div>
                     <canvas id="chart-${h.name}" height="120"></canvas>
                 </div>
                 ${snmpChartBoxHtml}
@@ -685,7 +814,7 @@ async function loadHosts() {
             div.appendChild(card);
 
             // ATUALIZA OS DADOS DE PING/TCP
-            loadLastResult(h.name);
+            loadLastResult(h.name, hostPorts);
 
             // Restaura estado aberto para não "reiniciar" visual a cada refresh.
             const state = openStateByHost[h.name];
@@ -759,7 +888,7 @@ async function loadHostsQuick() {
         for (const h of hosts) {
             const resultBox = document.getElementById(`result-${h.name}`);
             if (resultBox) {
-                loadLastResult(h.name);
+                loadLastResult(h.name, parseHostPorts(h));
             }
 
             const availBox = document.getElementById("availability-chart-box-" + h.name);
@@ -782,49 +911,92 @@ async function loadHostsQuick() {
     }
 }
 
-async function loadLastResult(name) {
+function tcpFailureLabel(error) {
+    const text = String(error || "").toLowerCase();
+    if (!text) return "falha";
+    if (text.includes("timeout")) return "timeout";
+    if (text.includes("refused") || text.includes("unreachable")) return "indisponível";
+    return "falha";
+}
+
+function renderTcpPortsStatus(hostName, checks, expectedPorts = []) {
+    const box = document.getElementById(`tcp-ports-status-${hostName}`);
+    if (!box) return;
+
+    const tcpChecks = Array.isArray(checks) ? checks.filter((c) => c.type === "tcp") : [];
+    const latestByPort = new Map();
+    for (const item of tcpChecks) {
+        const port = Number(item.tcp_port);
+        if (!Number.isInteger(port)) continue;
+        if (!latestByPort.has(port)) latestByPort.set(port, item);
+    }
+
+    const ports = Array.from(
+        new Set(expectedPorts.filter((p) => Number.isInteger(Number(p))).map((p) => Number(p)))
+    ).sort((a, b) => a - b);
+
+    if (!ports.length) {
+        box.innerHTML = "<small class='tcp-ports-empty'>Sem portas TCP configuradas.</small>";
+        return;
+    }
+
+    box.innerHTML = ports.map((port) => {
+        const item = latestByPort.get(port);
+        const ok = !!item?.success;
+        const dot = ok ? "bg-success" : "bg-danger";
+        const rightText = item
+            ? (ok ? `${item.latency ?? "N/A"} ms` : tcpFailureLabel(item.error))
+            : "sem dados";
+        return `
+            <div class="tcp-port-item">
+                <span class="status-indicator ${dot}"></span>
+                <span class="tcp-port-label">TCP ${port}:</span>
+                <span class="tcp-port-meta">${rightText}</span>
+            </div>
+        `;
+    }).join("");
+}
+
+async function loadLastResult(name, expectedPorts = []) {
     const box = document.getElementById("result-" + name);
+    if (!box) return;
 
     const res = await fetchWithAuth(`${API}/host/history/${name}`);
     
     if (!res || !res.ok) return;
 
     const data = await res.json();
+    renderTcpPortsStatus(name, data.checks, expectedPorts);
 
     const lastPing = data.checks.find(c => c.type === "ping");
-    const lastTcp  = data.checks.find(c => c.type === "tcp");
     const lastHttp = data.checks.find(c => c.type === "http");
 
     const pingLikelyFirewallBlocked =
         !!lastPing &&
         !lastPing.success &&
-        ((!!lastTcp && lastTcp.success) || (!!lastHttp && lastHttp.success));
+        (!!lastHttp && lastHttp.success);
 
     const pingDot = pingLikelyFirewallBlocked
         ? "bg-secondary"
         : (lastPing?.success ? "bg-success" : "bg-danger");
-    const tcpDot  = lastTcp?.success ? "bg-success" : "bg-danger";
     const httpDot = lastHttp?.success ? "bg-success" : "bg-danger";
 
     const pingLatencyText = pingLikelyFirewallBlocked
-        ? "N/A (Bloqueado pelo firewall)"
-        : `${lastPing?.latency ?? "N/A"} ms`;
+        ? "indisponível"
+        : (lastPing ? (lastPing.success ? `${lastPing?.latency ?? "sem dados"} ms` : tcpFailureLabel(lastPing.error)) : "sem dados");
+    const httpLatencyText = lastHttp
+        ? (lastHttp.success ? `${lastHttp.latency ?? "sem dados"} ms` : tcpFailureLabel(lastHttp.error))
+        : "sem dados";
 
     box.innerHTML = `
         <div>
             <span class="status-indicator ${pingDot}"></span>
             Ping: ${pingLatencyText}
         </div>
-        ${lastTcp ? `
-        <div>
-            <span class="status-indicator ${tcpDot}"></span>
-            TCP: ${lastTcp.latency ?? "N/A"} ms
-        </div>` : ''}
-        ${lastHttp ? `
         <div>
             <span class="status-indicator ${httpDot}"></span>
-            HTTP ${lastHttp.status_code ?? lastHttp.error ?? ""}: ${lastHttp.latency ?? "N/A"} ms
-        </div>` : ''}
+            HTTP: ${httpLatencyText}
+        </div>
     `;
 }
 
@@ -848,9 +1020,12 @@ async function loadHistory(name) {
             const statusClass = c.success ? "line-success" : "line-error";
             const statusText = c.success ? "OK" : "FAIL";
             const statusInfo = c.status_code ? `HTTP ${c.status_code ?? c.error ?? ""} — ` : "";
+            const typeLabel = c.type === "tcp" && c.tcp_port
+                ? `TCP ${c.tcp_port}`
+                : c.type.toUpperCase();
             return `
                 <div class="history-line ${statusClass}">
-                    <span class="type-badge">[${c.type.toUpperCase()}]</span> 
+                    <span class="type-badge">[${typeLabel}]</span> 
                     <strong>${statusText}</strong> —
                     ${statusInfo}
                     ${c.latency !== null ? c.latency + " ms" : "---"} —
@@ -917,17 +1092,17 @@ async function toggleAvailabilityChartType(name) {
 
 let currentEditHost = null;
 
-function openEditModal(name, ip, port, httpUrl, snmpEnabled = false) {
+function openEditModal(name, ip, ports = [], httpUrl, snmpEnabled = false) {
     currentEditHost = name;
 
     document.getElementById("modal-name").value = name;
     document.getElementById("modal-ip").value = ip;
-    document.getElementById("modal-port").value = port;
     document.getElementById("modal-http-url").value = httpUrl || "";
     const modalSnmpEnabled = document.getElementById("modal-snmp-enabled");
     if (modalSnmpEnabled) {
         modalSnmpEnabled.checked = !!snmpEnabled;
     }
+    setModalPorts(ports);
 
     document.getElementById("editModal").classList.remove("hidden");
 }
@@ -1114,16 +1289,25 @@ function formatMetric(value, suffix = "", digits = 2) {
 async function submitModalEdit() {
     const newName = document.getElementById("modal-name").value;
     const newIp = document.getElementById("modal-ip").value;
-    const newPort = document.getElementById("modal-port").value;
     const newHttp = document.getElementById("modal-http-url").value;
     const newSnmpEnabled = !!document.getElementById("modal-snmp-enabled")?.checked;
+    const modalPortsContainer = document.getElementById("modalPortsContainer");
+    let ports = [];
+    try {
+        ports = collectPorts(modalPortsContainer);
+    } catch (err) {
+        showToast("error", err.message || "Lista de portas inválida.");
+        return;
+    }
 
     const res = await fetchWithAuth(`${API}/host/update/${currentEditHost}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             address: newIp,
-            port: newPort ? parseInt(newPort) : null,
+            ports,
+            port: ports.length ? ports[0] : null,
+            url: newHttp || null,
             http_url: newHttp || null,
             snmp_enabled: newSnmpEnabled
         })
@@ -1145,54 +1329,88 @@ async function loadLatencyChart(name) {
     if (!res || !res.ok) return;
 
     const data = await res.json();
-
-    const ping = takeLast(data.checks.filter(c => c.type === "ping"));
-    const tcp  = takeLast(data.checks.filter(c => c.type === "tcp"));
-    const http = takeLast(data.checks.filter(c => c.type === "http"));
-
-    const labels = ping.map(c => formatApiTime(c.timestamp));
-
-    const pingData = ping.map(c => c.latency);
-    const tcpData  = tcp.map(c => c.latency);
-    const httpData = http.map(c => c.latency);
     const ctx = document.getElementById("chart-" + name);
     const containerId = "chart-container-" + name;
     const canvasId = "chart-" + name;
 
     if (!ctx) return;
-    if (!ping.length && !tcp.length && !http.length) {
+
+    const checks = Array.isArray(data.checks) ? data.checks : [];
+    const latencyChecks = checks.filter((c) => c.latency !== null && c.latency !== undefined);
+    if (!latencyChecks.length) {
         showChartEmpty(containerId, canvasId, "Sem dados de latência para este host.");
         return;
     }
     clearChartEmpty(containerId, canvasId);
 
+    const perSeries = new Map();
+    for (const check of latencyChecks) {
+        const type = String(check.type || "").toLowerCase();
+        if (type === "tcp") {
+            const tcpPort = Number(check.tcp_port);
+            if (!Number.isInteger(tcpPort)) continue;
+            const key = `tcp:${tcpPort}`;
+            const label = `TCP ${tcpPort}`;
+            if (!perSeries.has(key)) perSeries.set(key, { label, points: [] });
+            perSeries.get(key).points.push(check);
+            continue;
+        }
+        if (type === "ping") {
+            if (!perSeries.has("ping")) perSeries.set("ping", { label: "Ping", points: [] });
+            perSeries.get("ping").points.push(check);
+            continue;
+        }
+        if (type === "http") {
+            if (!perSeries.has("http")) perSeries.set("http", { label: "HTTP", points: [] });
+            perSeries.get("http").points.push(check);
+        }
+    }
+
+    const timestampKeys = Array.from(
+        new Set(
+            Array.from(perSeries.values()).flatMap((series) =>
+                series.points.map((p) => String(p.timestamp))
+            )
+        )
+    ).sort();
+
+    const labels = timestampKeys.map((ts) => formatApiTime(ts));
+    const colorByLabel = (label) => {
+        if (label === "Ping") return { line: "#22c55e", fill: "#22c55e33" };
+        if (label === "HTTP") return { line: "#f59e0b", fill: "#f59e0b33" };
+        return { line: "#3b82f6", fill: "#3b82f633" };
+    };
+
+    const orderedSeries = Array.from(perSeries.values()).sort((a, b) => {
+        const aTcp = a.label.startsWith("TCP ");
+        const bTcp = b.label.startsWith("TCP ");
+        if (aTcp && bTcp) {
+            return Number(a.label.replace("TCP ", "")) - Number(b.label.replace("TCP ", ""));
+        }
+        if (aTcp) return 1;
+        if (bTcp) return -1;
+        return a.label.localeCompare(b.label);
+    });
+
+    const datasets = orderedSeries.map((series) => {
+        const byTs = new Map(series.points.map((p) => [String(p.timestamp), p.latency]));
+        const values = timestampKeys.map((ts) => (byTs.has(ts) ? byTs.get(ts) : null));
+        const colors = colorByLabel(series.label);
+        return {
+            label: series.label,
+            data: values,
+            borderColor: colors.line,
+            backgroundColor: colors.fill,
+            tension: 0.3,
+            spanGaps: true,
+        };
+    });
+
     updateOrCreateChart(chartKey, ctx, {
         type: "line",
         data: {
             labels: labels,
-            datasets: [
-                {
-                    label: "Ping",
-                    data: pingData,
-                    borderColor: "#22c55e",
-                    backgroundColor: "#22c55e33",
-                    tension: 0.3
-                },
-                {
-                    label: "TCP",
-                    data: tcpData,
-                    borderColor: "#3b82f6",
-                    backgroundColor: "#3b82f633",
-                    tension: 0.3
-                }
-                ,{
-                    label: "HTTP",
-                    data: httpData,
-                    borderColor: "#f59e0b",
-                    backgroundColor: "#f59e0b33",
-                    tension: 0.3
-                }
-            ]
+            datasets
         },
         options: chartCommonOptions(null, null, "Latência (ms)")
     });
@@ -1920,6 +2138,12 @@ function filterHosts() {
 // ======================
 
 if (!isLoginPage) {
+    const modalAddPortBtn = document.getElementById("modalAddPortBtn");
+    const modalPortsContainer = document.getElementById("modalPortsContainer");
+    if (modalAddPortBtn && modalPortsContainer) {
+        modalAddPortBtn.addEventListener("click", () => addPortInput(modalPortsContainer, "", true));
+    }
+
     const openTrashBtn = document.getElementById("openTrashBtn");
     if (openTrashBtn) {
         openTrashBtn.addEventListener("click", openTrashModal);

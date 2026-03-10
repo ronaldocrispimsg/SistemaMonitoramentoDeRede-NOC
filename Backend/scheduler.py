@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import json
 from datetime import datetime, timedelta
 from threading import Lock
 
@@ -12,12 +13,12 @@ from Backend.metrics import (
     apply_preventive_logic,
     calc_jitter_http,
     calc_jitter_ping,
-    calc_jitter_tcp,
+    calc_jitter_tcp_ports,
     calc_latency_trend_http,
     calc_latency_trend_ping,
     calc_sla_rolling_http,
     calc_sla_rolling_ping,
-    calc_sla_rolling_tcp,
+    calc_sla_rolling_tcp_ports,
     classify_trend,
     classify_trend_http,
     compute_health,
@@ -107,7 +108,7 @@ def _get_degraded_streak(host_id: int) -> int:
 def determine_primary_check(host: Host) -> str:
     if host.http_url:
         return "HTTP"
-    if host.port:
+    if _host_tcp_ports(host):
         return "TCP"
     return "PING"
 
@@ -144,14 +145,58 @@ def determine_operational_state(host: Host, ping_result, tcp_result, http_result
 
 
 def _resolve_host_check_url(host: Host) -> str | None:
+    ports = _host_tcp_ports(host)
+    primary_port = ports[0] if ports else None
+
     if host.http_url:
         return host.http_url
-    if host.port in (80, 443):
-        protocol = "https" if host.port == 443 else "http"
+    if primary_port in (80, 443):
+        protocol = "https" if primary_port == 443 else "http"
         return f"{protocol}://{host.address}"
-    if host.port:
-        return f"http://{host.address}:{host.port}"
+    if primary_port:
+        return f"http://{host.address}:{primary_port}"
     return None
+
+
+def _host_tcp_ports(host: Host) -> list[int]:
+    if host.tcp_ports:
+        try:
+            parsed = json.loads(host.tcp_ports)
+            if isinstance(parsed, list):
+                normalized = []
+                for p in parsed:
+                    try:
+                        port = int(p)
+                    except (TypeError, ValueError):
+                        continue
+                    if 1 <= port <= 65535 and port not in normalized:
+                        normalized.append(port)
+                if normalized:
+                    return sorted(normalized)
+        except Exception:
+            pass
+
+    if host.port and 1 <= int(host.port) <= 65535:
+        return [int(host.port)]
+    return []
+
+
+def _aggregate_tcp_results(results: list[dict]) -> dict | None:
+    if not results:
+        return None
+
+    successes = [r for r in results if r.get("success")]
+    if successes:
+        best = min(successes, key=lambda r: r.get("latency") or float("inf"))
+        return {"success": True, "latency": best.get("latency"), "error": None}
+
+    errors = [str(r.get("error") or "").strip() for r in results]
+    errors = [e for e in errors if e]
+    return {
+        "success": False,
+        "latency": None,
+        "error": "; ".join(errors) if errors else "tcp_failed",
+    }
 
 
 def _snmp_is_configured(host: Host) -> bool:
@@ -335,9 +380,13 @@ def _host_check_blocking(host_id: int) -> None:
 
         ping_result = ping_host(ip)
 
-        tcp_result = None
-        if host.port:
-            tcp_result = tcp_check(ip, host.port)
+        tcp_results = []
+        for tcp_port in _host_tcp_ports(host):
+            result = tcp_check(ip, tcp_port)
+            result["port"] = tcp_port
+            tcp_results.append(result)
+
+        tcp_result = _aggregate_tcp_results(tcp_results)
 
         http_result = None
         url = _resolve_host_check_url(host)
@@ -452,16 +501,31 @@ def _host_check_blocking(host_id: int) -> None:
         )
 
         if tcp_result:
-            db.add(
-                CheckResult(
-                    host_id=host.id,
-                    host_name=host.name,
-                    check_type="tcp",
-                    success=tcp_result["success"],
-                    latency=tcp_result.get("latency"),
-                    error=tcp_result.get("error"),
+            if tcp_results:
+                for result in tcp_results:
+                    db.add(
+                        CheckResult(
+                            host_id=host.id,
+                            host_name=host.name,
+                            check_type="tcp",
+                            success=result["success"],
+                            latency=result.get("latency"),
+                            error=result.get("error"),
+                            tcp_port=result.get("port"),
+                        )
+                    )
+            else:
+                db.add(
+                    CheckResult(
+                        host_id=host.id,
+                        host_name=host.name,
+                        check_type="tcp",
+                        success=tcp_result["success"],
+                        latency=tcp_result.get("latency"),
+                        error=tcp_result.get("error"),
+                        tcp_port=None,
+                    )
                 )
-            )
 
         if http_result:
             db.add(
@@ -481,8 +545,9 @@ def _host_check_blocking(host_id: int) -> None:
         host.sla_rolling_ping = calc_sla_rolling_ping(db, host.id, 50)
         host.jitter_ms_ping = calc_jitter_ping(db, host.id, 10)
 
-        host.sla_rolling_tcp = calc_sla_rolling_tcp(db, host.id, 50)
-        host.jitter_ms_tcp = calc_jitter_tcp(db, host.id, 10)
+        active_tcp_ports = _host_tcp_ports(host)
+        host.sla_rolling_tcp = calc_sla_rolling_tcp_ports(db, host.id, active_tcp_ports, 50)
+        host.jitter_ms_tcp = calc_jitter_tcp_ports(db, host.id, active_tcp_ports, 10)
 
         host.sla_rolling_http = calc_sla_rolling_http(db, host.id, 50)
         host.jitter_ms_http = calc_jitter_http(db, host.id, 10)

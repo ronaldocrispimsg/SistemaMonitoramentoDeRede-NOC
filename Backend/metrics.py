@@ -80,8 +80,10 @@ def calc_sla_rolling_ping(db, host_id, window=50):
 def calc_sla_rolling_tcp(db, host_id, window=50):
     rows = (
         db.query(CheckResult)
-        .filter(CheckResult.host_id == host_id,
-                CheckResult.check_type == "tcp")
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "tcp"
+        )
         .order_by(CheckResult.timestamp.desc())
         .limit(window)
         .all()
@@ -139,12 +141,13 @@ def calc_jitter_ping(db, host_id, window=10):
     return round(sum(diffs)/len(diffs), 2)
 
 def calc_jitter_tcp(db, host_id, window=10):
-
     rows = (
         db.query(CheckResult)
-        .filter(CheckResult.host_id == host_id,
-                CheckResult.check_type == "tcp",
-                CheckResult.latency != None)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "tcp",
+            CheckResult.latency != None
+        )
         .order_by(CheckResult.timestamp.desc())
         .limit(window)
         .all()
@@ -162,6 +165,57 @@ def calc_jitter_tcp(db, host_id, window=10):
     ]
 
     return round(sum(diffs)/len(diffs), 2)
+
+
+def calc_sla_rolling_tcp_ports(db, host_id, tcp_ports, window=50):
+    ports = [int(p) for p in (tcp_ports or []) if p is not None]
+    if not ports:
+        return None
+
+    rows = (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "tcp",
+            CheckResult.tcp_port.in_(ports),
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+        .all()
+    )
+
+    if not rows:
+        return None
+
+    ok = sum(1 for r in rows if r.success)
+    return round(ok / len(rows) * 100, 2)
+
+
+def calc_jitter_tcp_ports(db, host_id, tcp_ports, window=10):
+    ports = [int(p) for p in (tcp_ports or []) if p is not None]
+    if not ports:
+        return None
+
+    rows = (
+        db.query(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "tcp",
+            CheckResult.tcp_port.in_(ports),
+            CheckResult.latency != None,
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+        .all()
+    )
+
+    if len(rows) < 2:
+        return None
+
+    values = [r.latency for r in rows]
+    values.reverse()
+    diffs = [abs(values[i] - values[i - 1]) for i in range(1, len(values))]
+    return round(sum(diffs) / len(diffs), 2)
 
 def calc_jitter_http(db, host_id, window=10):
 

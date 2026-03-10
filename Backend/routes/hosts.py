@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+import json
 from Backend.database import get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User, SNMPMetric
@@ -27,6 +28,61 @@ def _apply_snmp_policy(host: Host, snmp_enabled: bool) -> None:
     enabled = bool(snmp_enabled)
     host.snmp_enabled = enabled
     host.snmp_community = "noc-lite" if enabled else None
+
+
+def _normalize_ports(raw_ports, fallback_port: int | None = None) -> list[int]:
+    candidates = []
+    if raw_ports:
+        candidates.extend(raw_ports)
+    elif fallback_port is not None:
+        candidates.append(fallback_port)
+
+    cleaned = []
+    seen = set()
+    for value in candidates:
+        if value in (None, ""):
+            continue
+        try:
+            port = int(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"Porta inválida: {value}")
+
+        if port < 1 or port > 65535:
+            raise HTTPException(status_code=400, detail=f"Porta fora da faixa permitida: {port}")
+        if port in seen:
+            continue
+        seen.add(port)
+        cleaned.append(port)
+
+    cleaned.sort()
+    return cleaned
+
+
+def _store_host_ports(host: Host, ports: list[int]) -> None:
+    host.port = ports[0] if ports else None
+    host.tcp_ports = json.dumps(ports) if ports else None
+
+
+def _host_ports(host: Host) -> list[int]:
+    if host.tcp_ports:
+        try:
+            parsed = json.loads(host.tcp_ports)
+            if isinstance(parsed, list):
+                normalized = _normalize_ports(parsed, None)
+                if normalized:
+                    return normalized
+        except Exception:
+            pass
+
+    if host.port is not None:
+        return _normalize_ports([host.port], None)
+    return []
+
+
+def _resolve_http_input(data) -> str | None:
+    preferred = (data.url or "").strip() if hasattr(data, "url") else ""
+    legacy = (data.http_url or "").strip() if hasattr(data, "http_url") else ""
+    return preferred or legacy or None
 
 
 def _reset_host_operational_state(host: Host) -> None:
@@ -163,16 +219,24 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             existing_host.active = True
             existing_host.active_time = None
             existing_host.deleted_at = None
+            existing_ports = _host_ports(existing_host)
+            if data.ports is None and data.port is None:
+                ports = existing_ports
+            else:
+                ports = _normalize_ports(data.ports, data.port)
+            if not ports:
+                ports = [80, 443]
             existing_host.address = data.address
-            existing_host.port = data.port
+            _store_host_ports(existing_host, ports)
             existing_host.hostname_resolved = resolved
             _reset_host_operational_state(existing_host)
             existing_host.hostname_resolved = resolved
 
+            selected_http = _resolve_http_input(data)
             existing_host.http_url = resolve_http_url(
                 data.address,
-                data.http_url,
-                data.port or existing_host.port
+                selected_http,
+                (ports[0] if ports else None)
             )
             _apply_snmp_policy(existing_host, data.snmp_enabled)
 
@@ -185,10 +249,13 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             raise HTTPException(status_code=409, detail="Host com esse nome já existe")
 
     else:
+        ports = _normalize_ports(data.ports, data.port)
+        if not ports:
+            ports = [80, 443]
+        selected_http = _resolve_http_input(data)
         host = Host(
             name=normalized_name,
             address=data.address,
-            port=data.port,
             active=True,
             active_time=None,
             deleted_at=None,
@@ -200,11 +267,12 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             snmp_community="noc-lite" if data.snmp_enabled else None,
             hostname_resolved=resolved,
         )
+        _store_host_ports(host, ports)
 
         host.http_url = resolve_http_url(
             data.address,
-            data.http_url,
-            data.port or host.port
+            selected_http,
+            (ports[0] if ports else None)
         )
 
         db.add(host)
@@ -229,6 +297,8 @@ def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_us
     
     # Métricas em tempo real no objeto antes de enviar
     for h in hosts:
+        h.ports = _host_ports(h)
+        h.url = h.http_url
         h.availability_10m = availability_last_10_min(db, h.name)
         h.probable_cause = infer_probable_cause(db, h)
         h.icmp_blocked_but_service_up = bool(getattr(h, "icmp_blocked_but_service_up", False))
@@ -254,10 +324,24 @@ def check_host(host_name: str, db: Session = Depends(get_db), user: User = Depen
     ip = ips[0]
 
     ping_result = ping_host(ip)
-    tcp_result = None
+    tcp_results = []
+    for tcp_port in _host_ports(host):
+        result = tcp_check(ip, tcp_port)
+        result["port"] = tcp_port
+        tcp_results.append(result)
 
-    if host.port is not None:
-        tcp_result = tcp_check(ip, host.port)
+    tcp_result = None
+    if tcp_results:
+        successes = [r for r in tcp_results if r.get("success")]
+        if successes:
+            best = min(successes, key=lambda r: r.get("latency") or float("inf"))
+            tcp_result = {"success": True, "latency": best.get("latency"), "error": None}
+        else:
+            tcp_result = {
+                "success": False,
+                "latency": None,
+                "error": "; ".join(filter(None, [r.get("error") for r in tcp_results])) or "tcp_failed",
+            }
 
     icmp_blocked_but_service_up = (
         not ping_result["success"] and
@@ -332,6 +416,7 @@ def host_history(host_name: str, db: Session = Depends(get_db), user: User = Dep
                 "latency": c.latency,
                 "error": c.error,
                 "status_code": c.status_code,
+                "tcp_port": c.tcp_port,
                 "timestamp": c.timestamp.isoformat()
             }
             for c in checks
@@ -472,14 +557,19 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
         if not ips:
             raise HTTPException(status_code=400, detail="Endereço inválido. ")
     
+    if data.ports is None and data.port is None:
+        ports = _host_ports(host)
+    else:
+        ports = _normalize_ports(data.ports, data.port)
     host.address = data.address
-    host.port = data.port
+    _store_host_ports(host, ports)
     host.hostname_resolved = resolved
 
+    selected_http = _resolve_http_input(data)
     host.http_url = resolve_http_url(
         data.address,
-        data.http_url,
-        data.port or host.port
+        selected_http,
+        (ports[0] if ports else None)
     )
 
     if data.snmp_enabled is not None:
