@@ -302,7 +302,7 @@ CARDS HOST
     transition:all 0.3s ease;
     border:1px solid #d6e0eb;
     background:#fff;
-    padding:16px;
+    padding:14px;
     margin:12px 0;
     border-radius:12px;
     box-shadow:0 10px 18px rgba(15, 23, 42, 0.05);
@@ -311,6 +311,33 @@ CARDS HOST
 .card:hover{
     transform:translateY(-1px);
     box-shadow:0 14px 24px rgba(15, 23, 42, 0.08);
+}
+
+/* Estrutura principal do card de host */
+.host-card-header{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    margin-bottom:12px;
+}
+
+/* Corpo em 3 colunas: Resumo | Rede | SNMP */
+.host-card-body{
+    display:grid;
+    grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1fr) minmax(300px, 1fr);
+    gap:10px;
+    align-items:start;
+}
+
+.host-col{
+    min-width:0;
+}
+
+/* Rodapé com ações */
+.host-card-actions{
+    margin-top:8px;
+    padding-top:8px;
+    border-top:1px solid #e5e7eb;
 }
 
 .card-header{
@@ -327,10 +354,9 @@ CARDS HOST
 
 .host-top-line{
     display:flex;
-    justify-content:space-between;
+    justify-content:flex-start;
     align-items:center;
     gap:10px;
-    margin-bottom:8px;
 }
 
 .host-title-wrap{
@@ -349,27 +375,91 @@ CARDS HOST
 
 .host-meta-grid{
     display:grid;
-    grid-template-columns: repeat(2, minmax(200px, 1fr));
-    gap:4px 12px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap:6px;
+}
+
+.host-meta-item{
+    border:1px solid #e2e8f0;
+    background:#f8fafc;
+    border-radius:8px;
+    padding:6px 7px;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+}
+
+.host-meta-item small{
+    color:#64748b;
+    font-size:0.74rem;
+}
+
+.host-meta-item strong{
+    color:#334155;
+    font-size:0.82rem;
+    font-weight:600;
 }
 
 .metrics-section{
-    margin-top:12px;
-    padding-top:8px;
-    border-top:1px solid #e5e7eb;
+    margin-top:0;
+    padding-top:0;
+    border-top:none;
 }
 
 .metrics-title{
     font-weight:bold;
     margin-bottom:6px;
     color:#334155;
+    font-size:0.86rem;
+}
+
+/* Cartões internos das colunas do corpo */
+.host-section-card{
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    background:#ffffff;
+    padding:9px 10px;
+    min-height:100%;
+}
+
+.host-summary-list{
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+}
+
+.host-summary-list small{
+    color:#475569;
+    line-height:1.25;
 }
 
 .snmp-section{
     background:#f8fafc;
     border:1px solid #e2e8f0;
     border-radius:10px;
-    padding:12px;
+    padding:10px;
+}
+
+/* Estado vazio do SNMP alinhado ao restante do card */
+.snmp-empty{
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-start;
+    gap:6px;
+    min-height:170px;
+}
+
+/* Mantém o cabeçalho no topo e centraliza apenas a mensagem de estado vazio. */
+.snmp-empty-body{
+    flex:1;
+    min-height:90px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.snmp-empty-message{
+    margin-top:0;
 }
 
 /* Header do card SNMP */
@@ -400,9 +490,9 @@ CARDS HOST
 
 .network-split{
     display:grid;
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
-    gap:10px;
-    margin-bottom:6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap:8px;
+    margin-bottom:8px;
 }
 
 .network-col{
@@ -416,28 +506,45 @@ CARDS HOST
     border-radius:8px;
     padding:8px;
     background:#fff;
+    min-width:0;
 }
 
 .snmp-kpi-head{
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-start;
-    gap:10px;
+    /* Grid interno evita que o percentual esmague o label em áreas estreitas. */
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) max-content;
+    align-items:center;
+    column-gap:8px;
+    row-gap:4px;
     margin-bottom:6px;
+    min-width:0;
 }
 
 .snmp-kpi-label{
     color:#475569;
     text-align:left;
     line-height:1.15;
+    flex:1 1 auto;
+    min-width:0;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
 }
 
 .snmp-kpi-value{
-    min-width:58px;
+    flex-shrink:0;
+    min-width:0;
+    max-width:80px;
     text-align:right;
     font-weight:700;
-    color:#475569;
+    font-size:0.8rem;
+    line-height:1.1;
+    color:#334155;
     white-space:nowrap;
+    overflow:hidden;
+    text-overflow:clip;
+    justify-self:end;
+    padding-left:4px;
 }
 
 .snmp-kpi-bar{
@@ -454,9 +561,10 @@ CARDS HOST
     border-radius:999px;
 }
 
-.snmp-kpi-fill.metric-ok{ background:#9ca3af; }
-.snmp-kpi-fill.metric-warn{ background:#7f7f7f; }
-.snmp-kpi-fill.metric-critical{ background:#555555; }
+/* Cores semânticas discretas apenas para CPU/RAM/Disco. */
+.snmp-kpi-fill.metric-ok{ background:#2f855a; }
+.snmp-kpi-fill.metric-warn{ background:#b7791f; }
+.snmp-kpi-fill.metric-critical{ background:#c53030; }
 .snmp-kpi-fill.metric-neutral{ background:#c4c4c4; }
 
 /* Área inferior de tráfego (3 linhas) */
@@ -545,23 +653,24 @@ BOTÕES DOS CARDS
 
 .button-group{
     display:grid;
-    grid-template-columns: repeat(2, minmax(120px, 1fr));
-    gap:8px;
-    align-self:flex-start;
+    grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+    gap:6px;
+    width:100%;
 }
 
 .button-group button{
     width:100%;
-    padding:8px;
-    font-size:0.85em;
+    padding:5px 7px;
+    font-size:0.76em;
     border-radius:6px;
-    border:1px solid #cdd6e1;
-    background:#f8fafc;
+    border:1px solid #d7dee8;
+    background:#f9fafb;
+    color:#475569;
     font-weight:500;
 }
 
 .button-group button:hover{
-    background:#e2e8f0;
+    background:#eef2f7;
 }
 
 /* =========================
@@ -574,6 +683,11 @@ HISTÓRICO
     background:#e5e7eb;
     padding:6px;
     border-radius:6px;
+}
+
+.host-last-checks{
+    margin-top:2px;
+    font-size:0.84em;
 }
 
 .chart-box{
@@ -838,21 +952,17 @@ input[type=number]{
         gap:8px;
     }
 
-    .card-header{
-        flex-direction:column;
-    }
-
-    .button-group{
-        width:100%;
-    }
-
     .host-top-line{
         flex-direction:column;
         align-items:flex-start;
     }
 
-    .host-meta-grid{
+    .host-card-body{
         grid-template-columns: 1fr;
+    }
+
+    .host-meta-grid{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .network-split{
@@ -880,5 +990,11 @@ input[type=number]{
         width:calc(100vw - 24px);
         right:12px;
         bottom:12px;
+    }
+}
+
+@media (max-width: 560px){
+    .host-meta-grid{
+        grid-template-columns: 1fr;
     }
 }

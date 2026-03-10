@@ -276,7 +276,7 @@ async function loadHosts() {
                 h.network_out_bps
             ].some((value) => value !== null && value !== undefined);
             const snmpStatusHtml = !snmpConfigured
-                ? `<small class="snmp-tag snmp-tag-off">SNMP: não configurado</small>`
+                ? `<small class="snmp-tag snmp-tag-off snmp-empty-message">SNMP: não configurado</small>`
                 : "";
             const snmpSectionHtml = snmpConfigured ? `
                         <div class="metrics-section snmp-section">
@@ -287,39 +287,39 @@ async function loadHosts() {
                             <div class="snmp-kpi-grid">
                                 <div class="snmp-kpi-card">
                                     <div class="snmp-kpi-head">
-                                        <small class="snmp-kpi-label">CPU</small>
+                                        <small class="snmp-kpi-label" title="CPU">CPU</small>
                                         <small class="snmp-kpi-value ${metricClass(h.cpu_usage)}">${metricPercent(h.cpu_usage)}</small>
                                     </div>
                                     <div class="snmp-kpi-bar"><span class="snmp-kpi-fill ${metricClass(h.cpu_usage)}" style="width:${metricBarWidth(h.cpu_usage)}%"></span></div>
                                 </div>
                                 <div class="snmp-kpi-card">
                                     <div class="snmp-kpi-head">
-                                        <small class="snmp-kpi-label">RAM</small>
+                                        <small class="snmp-kpi-label" title="RAM">RAM</small>
                                         <small class="snmp-kpi-value ${metricClass(h.ram_usage)}">${metricPercent(h.ram_usage)}</small>
                                     </div>
                                     <div class="snmp-kpi-bar"><span class="snmp-kpi-fill ${metricClass(h.ram_usage)}" style="width:${metricBarWidth(h.ram_usage)}%"></span></div>
                                 </div>
                                 <div class="snmp-kpi-card">
                                     <div class="snmp-kpi-head">
-                                        <small class="snmp-kpi-label">Disco</small>
-                                        <small class="snmp-kpi-value ${metricClass(h.disk_usage, 85, 95)}">${metricPercent(h.disk_usage)}</small>
+                                        <small class="snmp-kpi-label" title="Disco">Disco</small>
+                                        <small class="snmp-kpi-value ${metricClass(h.disk_usage)}">${metricPercent(h.disk_usage)}</small>
                                     </div>
-                                    <div class="snmp-kpi-bar"><span class="snmp-kpi-fill ${metricClass(h.disk_usage, 85, 95)}" style="width:${metricBarWidth(h.disk_usage)}%"></span></div>
+                                    <div class="snmp-kpi-bar"><span class="snmp-kpi-fill ${metricClass(h.disk_usage)}" style="width:${metricBarWidth(h.disk_usage)}%"></span></div>
                                 </div>
                             </div>
                             <div class="snmp-traffic-panel">
                                 <div class="snmp-traffic-row">
-                                    <small class="snmp-traffic-label">Tráfego de Rede</small>
+                                    <small class="snmp-traffic-label" title="Tráfego de Rede">Tráfego de Rede</small>
                                     <div class="snmp-mini-bar"><span style="width:${totalTrafficBar}%"></span></div>
                                     <small class="snmp-traffic-value">${formatBps(h.network_traffic)}</small>
                                 </div>
                                 <div class="snmp-traffic-row">
-                                    <small class="snmp-traffic-label">Download (RX)</small>
+                                    <small class="snmp-traffic-label" title="Download (RX)">Download (RX)</small>
                                     <div class="snmp-mini-bar"><span style="width:${downloadTrafficBar}%"></span></div>
                                     <small class="snmp-traffic-value">${formatBps(h.network_in_bps)}</small>
                                 </div>
                                 <div class="snmp-traffic-row">
-                                    <small class="snmp-traffic-label">Upload (TX)</small>
+                                    <small class="snmp-traffic-label" title="Upload (TX)">Upload (TX)</small>
                                     <div class="snmp-mini-bar"><span style="width:${uploadTrafficBar}%"></span></div>
                                     <small class="snmp-traffic-value">${formatBps(h.network_out_bps)}</small>
                                 </div>
@@ -339,26 +339,42 @@ async function loadHosts() {
             ` : "";
 
             card.innerHTML = `
-                <div class="card-header">
-                    <div class="host-main-info">
-                        <div class="host-top-line">
-                            <div class="host-title-wrap">
-                                <span class="status-indicator ${statusColor}"></span>
-                                <strong class="host-title">
-                                    ${h.name}
-                                    <small class="host-addr">(${h.address}${h.port ? ':' + h.port : ''})</small>
-                                </strong>
+                <!-- Header: identificação + indicadores rápidos -->
+                <div class="host-card-header">
+                    <div class="host-top-line">
+                        <div class="host-title-wrap">
+                            <span class="status-indicator ${statusColor}"></span>
+                            <strong class="host-title">
+                                ${h.name}
+                                <small class="host-addr">(${h.address}${h.port ? ':' + h.port : ''})</small>
+                            </strong>
+                        </div>
+                    </div>
+
+                    <div class="host-meta-grid">
+                        <div class="host-meta-item"><small>Saúde</small><strong>${h.health_score ?? "N/A"}% <span class="severity-indicator ${sevClass}">✚</span></strong></div>
+                        <div class="host-meta-item"><small>Disponibilidade</small><strong>${availability10m}%</strong></div>
+                        <div class="host-meta-item"><small>Último check</small><strong>${formatCheckTime(h.last_check)}</strong></div>
+                        <div class="host-meta-item"><small>Último SNMP</small><strong>${formatCheckTime(h.last_snmp_check)}</strong></div>
+                    </div>
+                </div>
+
+                <!-- Body: três colunas (Resumo | Rede | SNMP) -->
+                <div class="host-card-body">
+                    <div class="host-col host-col-summary">
+                        <div class="host-section-card">
+                            <div class="metrics-title">Resumo</div>
+                            <div class="host-summary-list">
+                                <small><b>Saúde:</b> ${h.health_score ?? "N/A"}%</small>
+                                <small><b>Disponibilidade:</b> ${availability10m}%</small>
+                                <small><b>Tendência HTTP:</b> ${trendIcon(h.trend_http)} ${h.trend_http ?? "N/A"}</small>
+                                <small><b>Causa provável:</b> ${h.probable_cause ?? "Operação normal"}</small>
                             </div>
                         </div>
+                    </div>
 
-                        <div class="host-meta-grid">
-                            <small>Saúde: ${h.health_score ?? "N/A"}% <span class="severity-indicator ${sevClass}">✚</span></small>
-                            <small>Disponibilidade: ${availability10m}%</small>
-                            <small>Último check: ${formatCheckTime(h.last_check)}</small>
-                            <small>Último SNMP: ${formatCheckTime(h.last_snmp_check)}</small>
-                        </div>
-
-                        <div class="metrics-section">
+                    <div class="host-col host-col-network">
+                        <div class="host-section-card">
                             <div class="metrics-title">Rede</div>
                             <div class="network-split">
                                 <div class="network-col">
@@ -374,40 +390,43 @@ async function loadHosts() {
                                     <small>HTTP: ${h.jitter_ms_http ?? "N/A"} ms</small>
                                 </div>
                             </div>
-                            <small>Tendência HTTP: ${trendIcon(h.trend_http)} ${h.trend_http ?? "N/A"}</small><br>
-                            <small><b>Causa provável:</b> ${h.probable_cause ?? "Operação normal"}</small>
-                            ${snmpStatusHtml}
+                            <div class="host-checks-section">
+                                <div class="metrics-title">Últimos checks</div>
+                                <div id="result-${h.name}" class="host-last-checks">
+                                    <i>Atualizando...</i>
+                                </div>
+                            </div>
                         </div>
-                        ${snmpSectionHtml}
                     </div>
 
-                    <div class="button-group">
-                        <button class="history-btn"
-                            onclick="toggleHistory('${h.name}')">
-                            Histórico
-                        </button>
-                        <button class="latency-btn"
-                            onclick="toggleLatencyChart('${h.name}')">
-                            Gráfico de latência
-                        </button>
-                        ${snmpButtonHtml}
-                        <button onclick="toggleAvailabilityChartType('${h.name}')">
-                            Gráfico de disponibilidade por tipo
-                        </button>
-                        <button onclick="toggleAvailabilityChart('${h.name}')">
-                            Gráfico de disponibilidade geral
-                        </button>
-                        <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}')">
-                            Editar
-                        </button>
-                        <button class="delete-btn" onclick="softDeleteHost('${h.name}')">
-                            Deletar
-                        </button>
+                    <div class="host-col host-col-snmp">
+                        ${snmpConfigured ? snmpSectionHtml : `
+                            <div class="host-section-card snmp-section snmp-empty">
+                                <div class="snmp-header">
+                                    <div class="snmp-title">SNMP</div>
+                                    <div class="snmp-subtitle">Métricas estimadas via OIDs</div>
+                                </div>
+                                <div class="snmp-empty-body">
+                                    ${snmpStatusHtml}
+                                </div>
+                            </div>
+                        `}
                     </div>
                 </div>
-                <div id="result-${h.name}" style="margin-top: 10px; font-size: 0.9em;">
-                    <i>Atualizando...</i>
+
+                <!-- Footer: ações secundárias -->
+                <div class="host-card-actions">
+                    <div class="button-group">
+                        <button class="history-btn" onclick="toggleHistory('${h.name}')">Histórico</button>
+                        <button class="latency-btn" onclick="toggleLatencyChart('${h.name}')">Gráfico de latência</button>
+                        ${snmpButtonHtml}
+                        <button onclick="toggleAvailabilityChartType('${h.name}')">Gráfico de disponibilidade por tipo</button>
+                        <button onclick="toggleAvailabilityChart('${h.name}')">Gráfico de disponibilidade geral</button>
+                        <button onclick="openEditModal('${h.name}', '${h.address}', '${h.port ?? ""}', '${h.http_url ?? ""}')">Editar</button>
+                        <button class="delete-btn" onclick="softDeleteHost('${h.name}')">Deletar</button>
+                    </div>
                 </div>
+
                 <div id="chart-container-${h.name}" class="chart-box hidden" style="margin-top: 10px;">
                     <div class="chart-title">Latência por tipo</div>
                     <canvas id="chart-${h.name}" height="120"></canvas>
@@ -695,7 +714,8 @@ function calcRelativeBarWidth(value, maxValue) {
     return Math.max(8, Math.min(100, ratio));
 }
 
-function metricClass(value, warn = 80, critical = 95) {
+// Classificação visual para métricas percentuais (CPU/RAM/Disco): 0-59, 60-79, 80-100.
+function metricClass(value, warn = 60, critical = 80) {
     if (value === null || value === undefined) return "metric-neutral";
     if (value >= critical) return "metric-critical";
     if (value >= warn) return "metric-warn";
