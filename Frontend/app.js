@@ -19,6 +19,22 @@ const recentAlertCache = new Map();
 const ALERT_DEDUP_WINDOW_MS = 45000;
 const SEEN_ALERTS_STORAGE_KEY = "noclite_seen_alerts_v1";
 const MAX_SEEN_ALERTS = 200;
+const INCIDENT_TYPE_LABELS = {
+    DNS_FAILURE: "Falha DNS",
+    SERVICE_DEGRADED: "Serviço degradado",
+    SERVICE_DOWN: "Serviço indisponível",
+    GENERIC: "Incidente operacional"
+};
+const ALERT_TYPE_LABELS = {
+    DNS_TTL_LOW: "TTL DNS baixo",
+    DNS_CHANGE: "Mudança de DNS",
+    HEALTH_CRITICAL: "Saúde crítica",
+    STATUS_CHANGE: "Mudança de status",
+    UP_RECOVERED: "Recuperação",
+    DNS_FAILURE: "Falha DNS",
+    SERVICE_DOWN: "Serviço indisponível",
+    SERVICE_DEGRADED: "Serviço degradado"
+};
 
 function loadSeenAlertKeys() {
     try {
@@ -1395,6 +1411,16 @@ function alertSeverityClass(severity) {
     return "alert-sev-unknown";
 }
 
+function incidentTypeLabel(incidentType) {
+    const key = String(incidentType || "GENERIC").toUpperCase();
+    return INCIDENT_TYPE_LABELS[key] || "Incidente operacional";
+}
+
+function alertTypeLabel(alertType) {
+    const key = String(alertType || "").toUpperCase();
+    return ALERT_TYPE_LABELS[key] || (alertType || "Alerta");
+}
+
 function alertDedupeKey(alert) {
     return [
         String(alert.host_name || "").toLowerCase(),
@@ -1458,7 +1484,7 @@ function showAlertCard(alert) {
             ${showRawTransition ? rawTransitionText : transitionText}
         </div>
         <div class="alert-subtitle">
-            ${alert.host_address}${alert.host_port ? `:${alert.host_port}` : ""} | ${alert.alert_type ?? "STATUS_CHANGE"}
+            ${alert.host_address}${alert.host_port ? `:${alert.host_port}` : ""} | ${alertTypeLabel(alert.alert_type ?? "STATUS_CHANGE")}
         </div>
         <div class="alert-subtitle">
             ${formatApiDateTime(alert.timestamp)}
@@ -1685,7 +1711,13 @@ async function loadTimeline() {
 
         container.innerHTML = ordered.map((inc) => {
             const isClosed = String(inc.status || "").toUpperCase() === "CLOSED";
-            const statusLabel = isClosed ? "Recuperado" : "Incidente aberto";
+            const incidentType = String(inc.incident_type || "").toUpperCase();
+            let statusLabel = incidentTypeLabel(incidentType);
+            if (!isClosed) {
+                statusLabel = incidentTypeLabel(incidentType);
+            } else {
+                statusLabel = "Recuperado";
+            }
             const badgeClass = isClosed ? "timeline-badge-closed" : "timeline-badge-open";
             const itemClass = isClosed ? "timeline-item-closed" : "timeline-item-open";
             const startedAt = formatApiDateTime(inc.started_time);
@@ -1693,7 +1725,7 @@ async function loadTimeline() {
             const durationText = inc.duration
                 ? `${Math.max(1, Math.round(inc.duration / 60))} min`
                 : "Em andamento";
-            const reasonText = inc.reason || "Sem causa provável informada.";
+            const reasonText = inc.reason_text || inc.reason || "Sem causa provável informada.";
 
             return `
                 <div class="timeline-item ${itemClass}">

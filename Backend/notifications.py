@@ -21,6 +21,20 @@ STATUS_LABELS = {
     "UNKNOWN": "Desconhecido",
 }
 
+CHECK_LABELS = {
+    "HTTP": "HTTP",
+    "TCP": "TCP",
+    "DNS": "DNS",
+    "PING": "PING",
+}
+
+INCIDENT_TYPE_LABELS = {
+    "DNS_FAILURE": "Falha na resolução DNS",
+    "SERVICE_DOWN": "Serviço indisponível",
+    "SERVICE_DEGRADED": "Serviço degradado",
+    "GENERIC": "Incidente operacional",
+}
+
 _TELEGRAM_DEDUP_STATE = {}
 _TELEGRAM_DEDUP_LOCK = Lock()
 _DISPLAY_TZ = ZoneInfo(DISPLAY_TIMEZONE)
@@ -41,6 +55,16 @@ def _safe_host_name(host):
 
 def _safe_host_address(host):
     return getattr(host, "address", "unknown")
+
+
+def _check_label(check_type: str | None) -> str:
+    normalized = str(check_type or "N/A").strip().upper()
+    return CHECK_LABELS.get(normalized, normalized)
+
+
+def _incident_type_label(incident_type: str | None) -> str:
+    normalized = str(incident_type or "GENERIC").strip().upper()
+    return INCIDENT_TYPE_LABELS.get(normalized, "Incidente operacional")
 
 
 def build_generic_alert_message(host, status, message, timestamp=None):
@@ -109,7 +133,7 @@ def build_health_critical_message(host, metric, value, timestamp=None):
     )
 
 
-def build_failure_confirmed_message(host, old_status, new_status, fail_count, timestamp=None):
+def build_failure_confirmed_message(host, old_status, new_status, fail_count, timestamp=None, check_used=None):
     old_status_label = STATUS_LABELS.get(
         str(old_status or "").strip().upper(),
         old_status if old_status is not None else "Desconhecido"
@@ -124,8 +148,9 @@ def build_failure_confirmed_message(host, old_status, new_status, fail_count, ti
         f"Endereço: {_safe_host_address(host)}\n\n"
         f"Status anterior: {old_status_label}\n"
         f"Novo status: {new_status_label}\n\n"
+        f"Check utilizado: {_check_label(check_used)}\n"
         f"Falhas consecutivas detectadas: {fail_count}\n\n"
-        "O limite de falhas foi atingido (ALERT_FAIL_THRESHOLD).\n\n"
+        "O limite de falhas consecutivas foi atingido.\n\n"
         f"Horário: {_fmt_ts(timestamp)}"
     )
 
@@ -151,7 +176,7 @@ def build_incident_open_message(host, incident_type, description, timestamp=None
         "🚨 INCIDENTE ABERTO\n\n"
         f"Host: {_safe_host_name(host)}\n"
         f"Endereço: {_safe_host_address(host)}\n\n"
-        f"Tipo: {incident_type}\n\n"
+        f"Tipo: {_incident_type_label(incident_type)}\n\n"
         "Descrição:\n"
         f"{description}\n\n"
         f"Horário de abertura: {_fmt_ts(timestamp)}"
@@ -174,22 +199,38 @@ def build_incident_dns_message(host, domain, timestamp=None):
 
 def build_incident_host_unavailable_message(host, check_type, timestamp=None):
     return (
-        "🔴 INCIDENTE — HOST INDISPONÍVEL\n\n"
+        "🔴 INCIDENTE — SERVIÇO INDISPONÍVEL\n\n"
         f"Host: {_safe_host_name(host)}\n"
         f"Endereço: {_safe_host_address(host)}\n\n"
-        "3 falhas consecutivas no check primário.\n\n"
-        f"Check utilizado: {check_type}\n\n"
-        "Possível indisponibilidade do serviço ou host.\n\n"
+        "Falhas consecutivas no check principal.\n\n"
+        f"Check utilizado: {_check_label(check_type)}\n\n"
+        "Indisponibilidade operacional confirmada.\n\n"
+        f"Horário: {_fmt_ts(timestamp)}"
+    )
+
+def build_incident_service_degraded_message(host, check_type, timestamp=None):
+    return (
+        "⚠️ INCIDENTE — SERVIÇO DEGRADADO\n\n"
+        f"Host: {_safe_host_name(host)}\n"
+        f"Endereço: {_safe_host_address(host)}\n\n"
+        f"Check utilizado: {_check_label(check_type)}\n\n"
+        "Instabilidade detectada no serviço monitorado, com resposta parcial.\n\n"
         f"Horário: {_fmt_ts(timestamp)}"
     )
 
 
-def build_incident_closed_message(host, timestamp=None):
+def build_incident_closed_message(host, timestamp=None, incident_type=None):
+    recovery_text = "O host voltou ao estado operacional."
+    if incident_type == "SERVICE_DEGRADED":
+        recovery_text = "A estabilidade operacional foi restabelecida."
+    elif incident_type == "SERVICE_DOWN":
+        recovery_text = "O serviço voltou a responder normalmente."
+
     return (
         "✅ INCIDENTE FECHADO AUTOMATICAMENTE\n\n"
         f"Host: {_safe_host_name(host)}\n"
         f"Endereço: {_safe_host_address(host)}\n\n"
-        "O host voltou ao estado operacional.\n\n"
+        f"{recovery_text}\n\n"
         "Status atual: Online\n\n"
         "Incidente fechado automaticamente.\n\n"
         f"Horário: {_fmt_ts(timestamp)}"

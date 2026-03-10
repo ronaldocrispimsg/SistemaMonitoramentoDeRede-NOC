@@ -1,6 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
 import time
+from threading import Lock
 from sqlalchemy.orm import Session
 from Backend.database import SessionLocal
 from Backend.models import Host, CheckResult, Alert
@@ -22,12 +23,78 @@ from Backend.snmp_engine import (
     register_snmp_success,
     register_snmp_failure,
 )
-from Backend.utils import close_incident, consecutive_failures, open_incident
+from Backend.utils import (
+    close_incident,
+    consecutive_failures,
+    open_incident,
+    INCIDENT_TYPE_DNS_FAILURE,
+    INCIDENT_TYPE_SERVICE_DOWN,
+    INCIDENT_TYPE_SERVICE_DEGRADED,
+)
 
 scheduler = BackgroundScheduler()
 
 ALERT_FAIL_THRESHOLD = 2
 ALERT_RECOVER_THRESHOLD = 1
+DEGRADED_OPEN_THRESHOLD = 3
+
+_ALERT_COOLDOWN_STATE = {}
+_ALERT_COOLDOWN_LOCK = Lock()
+_DEGRADED_STREAKS = {}
+
+
+def _alert_cooldown_passed(host_id: int, alert_type: str, cooldown_seconds: int, fingerprint: str | None = None) -> bool:
+    key = (host_id, alert_type, fingerprint or "")
+    now_ts = time.time()
+    with _ALERT_COOLDOWN_LOCK:
+        last_ts = _ALERT_COOLDOWN_STATE.get(key)
+        if last_ts is not None and (now_ts - last_ts) < cooldown_seconds:
+            return False
+        _ALERT_COOLDOWN_STATE[key] = now_ts
+        if len(_ALERT_COOLDOWN_STATE) > 10000:
+            expire_before = now_ts - max(cooldown_seconds * 2, 300)
+            stale = [k for k, ts in _ALERT_COOLDOWN_STATE.items() if ts < expire_before]
+            for k in stale:
+                _ALERT_COOLDOWN_STATE.pop(k, None)
+    return True
+
+
+def determine_primary_check(host: Host) -> str:
+    if host.http_url:
+        return "HTTP"
+    if host.port:
+        return "TCP"
+    return "PING"
+
+
+def determine_operational_state(host: Host, ping_result, tcp_result, http_result):
+    service_up_without_icmp = (
+        not ping_result["success"] and (
+            (tcp_result is not None and tcp_result.get("success")) or
+            (http_result is not None and http_result.get("success"))
+        )
+    )
+    primary_check = determine_primary_check(host)
+
+    if primary_check == "HTTP" and http_result is not None:
+        if http_result.get("success"):
+            return "UP", primary_check, service_up_without_icmp
+        tcp_ok = bool(tcp_result and tcp_result.get("success"))
+        ping_ok = bool(ping_result.get("success"))
+        if tcp_ok or ping_ok:
+            return "DEGRADED", primary_check, service_up_without_icmp
+        return "DOWN", primary_check, service_up_without_icmp
+
+    if primary_check == "TCP" and tcp_result is not None:
+        if tcp_result.get("success"):
+            return "UP", primary_check, service_up_without_icmp
+        if ping_result.get("success"):
+            return "DEGRADED", primary_check, service_up_without_icmp
+        return "DOWN", primary_check, service_up_without_icmp
+
+    if ping_result.get("success") or service_up_without_icmp:
+        return "UP", primary_check, service_up_without_icmp
+    return "DOWN", primary_check, service_up_without_icmp
 
 def check_all_hosts():
 
@@ -64,7 +131,10 @@ def check_all_hosts():
 
                 # alerta TTL baixo
                 if ttl is not None and ttl < 60:
-                    if not host.last_ttl_alert or (datetime.utcnow() - host.last_ttl_alert).seconds > 3600:
+                    if (
+                        (not host.last_ttl_alert or (datetime.utcnow() - host.last_ttl_alert).seconds > 3600) and
+                        _alert_cooldown_passed(host.id, "DNS_TTL_LOW", 3600, fingerprint=str(ttl))
+                    ):
                         db.add(Alert(
                             host_id=host.id,
                             alert_type="DNS_TTL_LOW",
@@ -99,7 +169,26 @@ def check_all_hosts():
                     db.flush()
 
                     if consecutive_failures(db, host.id, limit=3, check_types=["dns"]):
-                        open_incident(db, host, "Falha na resolução DNS", auto_commit=False)
+                        open_incident(
+                            db,
+                            host,
+                            "Falha na resolução DNS",
+                            incident_type=INCIDENT_TYPE_DNS_FAILURE,
+                            check_used="DNS",
+                            auto_commit=False
+                        )
+                        close_incident(
+                            db,
+                            host.name,
+                            incident_type=INCIDENT_TYPE_SERVICE_DOWN,
+                            auto_commit=False
+                        )
+                        close_incident(
+                            db,
+                            host.name,
+                            incident_type=INCIDENT_TYPE_SERVICE_DEGRADED,
+                            auto_commit=False
+                        )
 
                     db.commit()
                     continue
@@ -122,17 +211,20 @@ def check_all_hosts():
 
                 if host.last_resolved_ip and host.last_resolved_ip not in ips:
                     old_ip = host.last_resolved_ip
-                    db.add(Alert(
-                        host_id=host.id,
-                        alert_type="DNS_CHANGE",
-                        old_status=old_ip,
-                        new_status=str(ips)
-                    ))
-                    send_telegram_alert(
-                        build_dns_change_message(host, host.address, old_ip, str(ips), datetime.utcnow())
-                    )
+                    new_ip = str(ips)
+                    if _alert_cooldown_passed(host.id, "DNS_CHANGE", 300, fingerprint=f"{old_ip}->{new_ip}"):
+                        db.add(Alert(
+                            host_id=host.id,
+                            alert_type="DNS_CHANGE",
+                            old_status=old_ip,
+                            new_status=new_ip
+                        ))
+                        send_telegram_alert(
+                            build_dns_change_message(host, host.address, old_ip, new_ip, datetime.utcnow())
+                        )
 
                 host.last_resolved_ip = ip
+                close_incident(db, host.name, incident_type=INCIDENT_TYPE_DNS_FAILURE, auto_commit=False)
 
                 # =====================
                 # CHECKS
@@ -172,7 +264,11 @@ def check_all_hosts():
                 host.health_score = score
                 host.severity = severity
 
-                if old_severity != "CRITICAL" and severity == "CRITICAL":
+                if (
+                    old_severity != "CRITICAL" and
+                    severity == "CRITICAL" and
+                    _alert_cooldown_passed(host.id, "HEALTH_CRITICAL", 900, fingerprint=f"score:{score}")
+                ):
                     db.add(Alert(
                         host_id=host.id,
                         alert_type="HEALTH_CRITICAL",
@@ -184,38 +280,14 @@ def check_all_hosts():
                     )
 
                 # =====================
-                # STATUS ENGINE (CORRETO)
+                # STATUS ENGINE (OPERACIONAL)
                 # =====================
-                service_up_without_icmp = (
-                    not ping_result["success"] and (
-                        (tcp_result is not None and tcp_result.get("success")) or
-                        (http_result is not None and http_result.get("success"))
-                    )
+                new_status, primary_check, service_up_without_icmp = determine_operational_state(
+                    host,
+                    ping_result,
+                    tcp_result,
+                    http_result
                 )
-
-                if http_result and http_result.get("status_code") and 500 <= http_result["status_code"] < 600:
-                    new_status = "CRITICAL"
-
-                elif http_result and not http_result["success"]:
-                    new_status = "DEGRADED"
-
-                elif http_result and http_result["success"]:
-                    new_status = "UP"
-                
-                elif not ping_result["success"] and not tcp_result:
-                    new_status = "DOWN"
-                    
-                elif ping_result["success"]:
-                    new_status = "UP"
-
-                elif not ping_result["success"] and tcp_result and tcp_result["success"]:
-                    new_status = "UP"
-
-                elif tcp_result and not tcp_result["success"]:
-                    new_status = "DEGRADED"
-
-                else:
-                    new_status = "DOWN"
 
                 host.status = new_status
 
@@ -225,13 +297,17 @@ def check_all_hosts():
                 if new_status == "UP":
                     host.success_streak = (host.success_streak or 0) + 1
                     host.fail_streak = 0
+                    _DEGRADED_STREAKS[host.id] = 0
 
                 elif new_status == "DEGRADED":
                     host.success_streak = 0
+                    host.fail_streak = (host.fail_streak or 0) + 1
+                    _DEGRADED_STREAKS[host.id] = (_DEGRADED_STREAKS.get(host.id, 0) + 1)
 
                 else:
                     host.fail_streak = (host.fail_streak or 0) + 1
                     host.success_streak = 0
+                    _DEGRADED_STREAKS[host.id] = 0
 
                 # =====================
                 # ALERTAS TRANSIÇÃO
@@ -253,7 +329,8 @@ def check_all_hosts():
                                 old_status,
                                 new_status,
                                 host.fail_streak,
-                                datetime.utcnow()
+                                datetime.utcnow(),
+                                check_used=primary_check
                             )
                         )
 
@@ -362,17 +439,51 @@ def check_all_hosts():
                 host.severity = max_severity(host.severity, preventive_severity)
 
                 final_status = host.status
+                primary_checks = [primary_check.lower()]
 
-                primary_checks = ["ping"]
-                if host.http_url:
-                    primary_checks = ["http"]
-                elif host.port:
-                    primary_checks = ["tcp"]
-
-                if consecutive_failures(db, host.id, limit=3, check_types=primary_checks):
-                    open_incident(db, host, "Host indisponível", auto_commit=False)
-                elif final_status == "UP":
-                    close_incident(db, host.name, auto_commit=False)
+                if final_status == "DOWN" and consecutive_failures(db, host.id, limit=3, check_types=primary_checks):
+                    open_incident(
+                        db,
+                        host,
+                        f"Serviço {primary_check} indisponível",
+                        incident_type=INCIDENT_TYPE_SERVICE_DOWN,
+                        check_used=primary_check,
+                        auto_commit=False
+                    )
+                    close_incident(
+                        db,
+                        host.name,
+                        incident_type=INCIDENT_TYPE_SERVICE_DEGRADED,
+                        auto_commit=False
+                    )
+                elif final_status == "DEGRADED" and _DEGRADED_STREAKS.get(host.id, 0) >= DEGRADED_OPEN_THRESHOLD:
+                    open_incident(
+                        db,
+                        host,
+                        f"Instabilidade detectada no serviço {primary_check}",
+                        incident_type=INCIDENT_TYPE_SERVICE_DEGRADED,
+                        check_used=primary_check,
+                        auto_commit=False
+                    )
+                    close_incident(
+                        db,
+                        host.name,
+                        incident_type=INCIDENT_TYPE_SERVICE_DOWN,
+                        auto_commit=False
+                    )
+                elif final_status == "UP" and host.success_streak >= ALERT_RECOVER_THRESHOLD:
+                    close_incident(
+                        db,
+                        host.name,
+                        incident_type=INCIDENT_TYPE_SERVICE_DOWN,
+                        auto_commit=False
+                    )
+                    close_incident(
+                        db,
+                        host.name,
+                        incident_type=INCIDENT_TYPE_SERVICE_DEGRADED,
+                        auto_commit=False
+                    )
                                     
                 if host.severity in ("WARNING", "DEGRADED", "CRITICAL"):
                     if (
@@ -393,17 +504,17 @@ def check_all_hosts():
                         details_lines.append(f"Severidade: {severity_text}")
                         details_lines.append(f"Score: {host.health_score}")
                         details_text = "\n".join(details_lines)
-
-                        send_telegram_alert(
-                            build_preventive_alert_message(
-                                host,
-                                condition_text,
-                                details_text,
-                                datetime.utcnow()
+                        prevent_fingerprint = f"{condition_text}|{extra_reasons or ''}|{severity_text}"
+                        if _alert_cooldown_passed(host.id, "PREVENTIVE", 1800, fingerprint=prevent_fingerprint):
+                            send_telegram_alert(
+                                build_preventive_alert_message(
+                                    host,
+                                    condition_text,
+                                    details_text,
+                                    datetime.utcnow()
+                                )
                             )
-                        )
-
-                        host.last_preventive_alert = datetime.utcnow()
+                            host.last_preventive_alert = datetime.utcnow()
 
                 db.commit()
             except Exception as e:

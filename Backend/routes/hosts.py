@@ -13,6 +13,9 @@ from Backend.utils import (
     resolve_http_url,
     extract_ips_from_dns_result,
     get_last_check,
+    calculate_availability_points,
+    parse_incident_type,
+    strip_incident_prefix,
 )
 from Backend.dependencies import get_current_user
 from Backend.security import verify_password, create_access_token, hash_password
@@ -369,45 +372,10 @@ def availability_type(host_name: str, db: Session = Depends(get_db), user: User 
     if not host:
         return {"ping": [], "tcp": [], "http": []}
 
-    window = 100
-
-    def calc_availability(check_type: str):
-
-        rows = (
-            db.query(CheckResult)
-            .filter(
-                CheckResult.host_id == host.id,
-                CheckResult.check_type == check_type
-            )
-            .order_by(CheckResult.timestamp.desc())
-            .limit(200)
-            .all()
-        )
-        rows.reverse()
-
-        points = []
-        total = len(rows)
-        if total == 0:
-            return points
-        
-        for i in range(1, total + 1):
-            start_index = max(0, i - window)
-            chunk = rows[start_index:i]
-
-            ok = sum(1 for r in chunk if r.success)
-            availability = (ok / len(chunk)) * 100
-
-            points.append({
-                "timestamp": chunk[-1].timestamp.isoformat(),
-                "availability": round(availability, 2)
-            })
-
-        return points
-
     return {
-        "ping": calc_availability("ping"),
-        "tcp": calc_availability("tcp"),
-        "http": calc_availability("http")
+        "ping": calculate_availability_points(db, host.id, "ping"),
+        "tcp": calculate_availability_points(db, host.id, "tcp"),
+        "http": calculate_availability_points(db, host.id, "http")
     }
     
 @router.get("/hosts/metrics/availability/host/{host_name}")
@@ -581,6 +549,8 @@ def get_latest_incidents(db: Session = Depends(get_db), user: str = Depends(get_
             "host_name": i.host_name,
             "status": i.status,
             "reason": i.reason,
+            "incident_type": parse_incident_type(i.reason),
+            "reason_text": strip_incident_prefix(i.reason),
             "started_time": i.started_time.isoformat(),
             "ended_time": i.ended_time.isoformat() if i.ended_time else None,
             "duration": i.duration_seconds
