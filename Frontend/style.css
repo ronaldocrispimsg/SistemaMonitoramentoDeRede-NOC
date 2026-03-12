@@ -235,6 +235,97 @@ button{
     background:var(--primary-dark);
 }
 
+.network-discovery-form{
+    display:grid;
+    grid-template-columns: minmax(220px, 1fr) auto;
+    gap:8px;
+    align-items:center;
+}
+
+.network-discovery-form button{
+    border:none;
+    border-radius:8px;
+    background:var(--primary);
+    color:#fff;
+    font-weight:600;
+}
+
+.network-discovery-form button:hover{
+    background:var(--primary-dark);
+}
+
+.network-discovery-info{
+    margin:8px 4px 6px;
+    color:#475569;
+    font-size:0.85rem;
+}
+
+.network-discovery-list{
+    border:1px solid #d7dee8;
+    border-radius:8px;
+    background:#f8fafc;
+    padding:8px;
+    margin:4px;
+    max-height:220px;
+    overflow:auto;
+}
+
+.network-discovery-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    padding:6px 4px;
+    border-bottom:1px solid #e5e7eb;
+}
+
+.network-discovery-item:last-child{
+    border-bottom:none;
+}
+
+.network-discovery-meta{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+}
+
+.network-discovery-meta small{
+    color:#64748b;
+}
+
+.network-exists-badge{
+    display:inline-block;
+    border:1px solid #cbd5e1;
+    color:#64748b;
+    background:#f1f5f9;
+    border-radius:999px;
+    padding:2px 8px;
+    font-size:0.72rem;
+    font-weight:600;
+}
+
+.network-discovery-actions{
+    margin:8px 4px 4px;
+}
+
+.network-discovery-actions button{
+    border:none;
+    border-radius:8px;
+    background:var(--primary);
+    color:#fff;
+    font-weight:600;
+}
+
+.network-discovery-actions button:hover{
+    background:var(--primary-dark);
+}
+
+.network-import-result{
+    margin:8px 4px 0;
+    color:#475569;
+    font-size:0.85rem;
+}
+
 .ports-field{
     grid-column: span 4;
     border:1px solid #d7dee8;

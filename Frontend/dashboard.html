@@ -59,6 +59,24 @@
 </section>
 
 <section class="panel-section">
+    <article class="overview-card">
+        <h2>Descoberta de Rede (LAN)</h2>
+        <div class="network-discovery-form">
+            <input id="discoverSubnet" placeholder="Subnet CIDR (ex.: 192.168.0.0/24)">
+            <button id="discoverBtn" type="button">Descobrir rede</button>
+        </div>
+        <div id="networkDiscoveryInfo" class="network-discovery-info"></div>
+        <div id="networkDiscoveryList" class="network-discovery-list">
+            <small>Nenhuma descoberta executada.</small>
+        </div>
+        <div class="network-discovery-actions">
+            <button id="importSelectedBtn" type="button">Adicionar selecionados</button>
+        </div>
+        <div id="networkImportResult" class="network-import-result"></div>
+    </article>
+</section>
+
+<section class="panel-section">
       <div class="filter-bar">
         <input type="text" id="searchInput" placeholder="Filtrar por nome ou IP..." onkeyup="filterHosts()">
         <select id="statusFilter" onchange="filterHosts()">
@@ -87,14 +105,13 @@
     <h3>Editar Host</h3>
 
     <input id="modal-name" disabled>
-    <input id="modal-ip">
-    <input id="modal-http-url">
+    <input id="modal-ip" placeholder="Endereco/IP">
+    <input id="modal-http-url" placeholder="URL HTTP (opcional)">
     <div id="modalPortsField" class="ports-field">
       <div class="ports-field-head">
         <span>Portas TCP</span>
         <button id="modalAddPortBtn" type="button" class="add-port-btn" title="Adicionar porta" aria-label="Adicionar porta">+</button>
       </div>
-      <small class="ports-help">Se não alterar, 80 e 443 serão monitoradas.</small>
       <div id="modalPortsContainer" class="ports-container"></div>
     </div>
     <label class="snmp-enable-field snmp-enable-switch">

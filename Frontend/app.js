@@ -431,8 +431,8 @@ function setModalPorts(ports) {
         : [];
 
     if (normalized.length === 0) {
-        addPortInput(container, "", false, "80");
-        addPortInput(container, "", false, "443");
+        addPortInput(container, "", false, "Porta");
+        addPortInput(container, "", false, "Porta");
         addPortInput(container, "", false, "Porta");
         return;
     }
@@ -546,6 +546,187 @@ if (hostForm) {
             showToast("error", "Não foi possível conectar ao servidor.");
         }
     });
+}
+
+let discoveredLanHosts = [];
+
+function renderDiscoveredLanHosts() {
+    const listBox = document.getElementById("networkDiscoveryList");
+    const infoBox = document.getElementById("networkDiscoveryInfo");
+    if (!listBox || !infoBox) return;
+
+    if (!Array.isArray(discoveredLanHosts) || discoveredLanHosts.length === 0) {
+        infoBox.textContent = "";
+        listBox.innerHTML = "<small>Nenhum host encontrado.</small>";
+        return;
+    }
+
+    const selectableCount = discoveredLanHosts.filter((h) => !h.already_exists).length;
+    infoBox.textContent = `${discoveredLanHosts.length} host(s) encontrado(s) • ${selectableCount} disponível(is) para importação`;
+    listBox.innerHTML = discoveredLanHosts.map((host) => {
+        const disabled = host.already_exists ? "disabled" : "";
+        const checked = host.already_exists ? "" : "checked";
+        const hostnameText = host.hostname ? ` • ${host.hostname}` : "";
+        return `
+            <label class="network-discovery-item">
+                <div class="network-discovery-meta">
+                    <strong>${host.name}</strong>
+                    <small>${host.address}${hostnameText}</small>
+                </div>
+                <div>
+                    ${host.already_exists ? '<span class="network-exists-badge">já cadastrado</span>' : ""}
+                    <input type="checkbox" class="discover-host-check" data-id="${host.id}" ${disabled} ${checked}>
+                </div>
+            </label>
+        `;
+    }).join("");
+}
+
+async function discoverNetworkHosts() {
+    const subnetInput = document.getElementById("discoverSubnet");
+    const discoverBtn = document.getElementById("discoverBtn");
+    const resultBox = document.getElementById("networkImportResult");
+    if (!subnetInput || !discoverBtn) return;
+
+    const subnet = String(subnetInput.value || "").trim();
+    if (!subnet) {
+        if (resultBox) resultBox.textContent = "Informe uma subnet no formato CIDR.";
+        showToast("warning", "Informe uma subnet no formato CIDR.");
+        return;
+    }
+
+    discoverBtn.disabled = true;
+    discoverBtn.textContent = "Descobrindo...";
+    if (resultBox) resultBox.textContent = "";
+
+    try {
+        const res = await fetchWithAuth(`${API}/network/discover`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subnet })
+        });
+        if (!res) return;
+
+        const data = await res.json();
+        if (!res.ok) {
+            if (resultBox) resultBox.textContent = data.detail || "Erro na descoberta de rede.";
+            showToast("error", data.detail || "Erro na descoberta de rede.");
+            return;
+        }
+
+        discoveredLanHosts = Array.isArray(data.hosts) ? data.hosts : [];
+        renderDiscoveredLanHosts();
+        if (resultBox) resultBox.textContent = "";
+        showToast("success", `Descoberta concluída: ${data.found ?? discoveredLanHosts.length} host(s).`);
+    } catch (err) {
+        console.error("Erro na descoberta de rede:", err);
+        if (resultBox) resultBox.textContent = "Falha ao executar descoberta de rede.";
+        showToast("error", "Falha ao executar descoberta de rede.");
+    } finally {
+        discoverBtn.disabled = false;
+        discoverBtn.textContent = "Descobrir rede";
+    }
+}
+
+function isValidIpv4Cidr(value) {
+    const text = String(value || "").trim();
+    const [ip, prefix] = text.split("/");
+    if (!ip || prefix === undefined || text.split("/").length !== 2) return false;
+    const prefixNum = Number(prefix);
+    if (!Number.isInteger(prefixNum) || prefixNum < 0 || prefixNum > 32) return false;
+    const octets = ip.split(".");
+    if (octets.length !== 4) return false;
+    return octets.every((octet) => {
+        if (!/^\d{1,3}$/.test(octet)) return false;
+        const n = Number(octet);
+        return n >= 0 && n <= 255;
+    });
+}
+
+async function preloadDiscoverySubnet() {
+    const subnetInput = document.getElementById("discoverSubnet");
+    if (!subnetInput) return;
+    if (String(subnetInput.value || "").trim()) return;
+
+    try {
+        const res = await fetchWithAuth(`${API}/network/default-subnet`);
+        if (!res || !res.ok) {
+            console.warn("Não foi possível detectar subnet automática.");
+            return;
+        }
+        const data = await res.json();
+        const subnet = String(data?.subnet || "").trim();
+        if (isValidIpv4Cidr(subnet) && !String(subnetInput.value || "").trim()) {
+            subnetInput.value = subnet;
+        }
+    } catch (err) {
+        console.warn("Falha no preload da subnet automática:", err);
+    }
+}
+
+async function importSelectedLanHosts() {
+    const checks = Array.from(document.querySelectorAll(".discover-host-check:checked"));
+    const selected = checks
+        .map((check) => {
+            const id = check.getAttribute("data-id");
+            return discoveredLanHosts.find((h) => h.id === id);
+        })
+        .filter(Boolean)
+        .map((host) => ({
+            name: host.name,
+            address: host.address
+        }));
+
+    if (!selected.length) {
+        showToast("warning", "Selecione ao menos um host para importar.");
+        return;
+    }
+
+    const importBtn = document.getElementById("importSelectedBtn");
+    const resultBox = document.getElementById("networkImportResult");
+    if (importBtn) {
+        importBtn.disabled = true;
+        importBtn.textContent = "Importando...";
+    }
+
+    try {
+        const res = await fetchWithAuth(`${API}/network/import`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ hosts: selected })
+        });
+        if (!res) return;
+
+        const data = await res.json();
+        if (!res.ok) {
+            showToast("error", data.detail || "Erro ao importar hosts selecionados.");
+            return;
+        }
+
+        if (resultBox) {
+            resultBox.textContent = `Solicitados: ${data.requested} • Criados: ${data.created} • Ignorados: ${data.skipped}`;
+        }
+
+        const createdAddresses = new Set(
+            (Array.isArray(data.results) ? data.results : [])
+                .filter((r) => r.created)
+                .map((r) => r.address)
+        );
+        discoveredLanHosts = discoveredLanHosts.map((host) =>
+            createdAddresses.has(host.address) ? { ...host, already_exists: true } : host
+        );
+        renderDiscoveredLanHosts();
+        await loadHosts();
+        showToast("success", `${data.created} host(s) importado(s) com sucesso.`);
+    } catch (err) {
+        console.error("Erro ao importar hosts:", err);
+        showToast("error", "Falha ao importar hosts selecionados.");
+    } finally {
+        if (importBtn) {
+            importBtn.disabled = false;
+            importBtn.textContent = "Adicionar selecionados";
+        }
+    }
 }
 
 // ======================
@@ -1096,7 +1277,7 @@ function openEditModal(name, ip, ports = [], httpUrl, snmpEnabled = false) {
     currentEditHost = name;
 
     document.getElementById("modal-name").value = name;
-    document.getElementById("modal-ip").value = ip;
+    document.getElementById("modal-ip").value = ip || "";
     document.getElementById("modal-http-url").value = httpUrl || "";
     const modalSnmpEnabled = document.getElementById("modal-snmp-enabled");
     if (modalSnmpEnabled) {
@@ -2157,6 +2338,14 @@ if (!isLoginPage) {
     if (refreshTrashBtn) {
         refreshTrashBtn.addEventListener("click", () => runTaskOnce("trash", loadTrashHosts));
     }
+    const discoverBtn = document.getElementById("discoverBtn");
+    if (discoverBtn) {
+        discoverBtn.addEventListener("click", discoverNetworkHosts);
+    }
+    const importSelectedBtn = document.getElementById("importSelectedBtn");
+    if (importSelectedBtn) {
+        importSelectedBtn.addEventListener("click", importSelectedLanHosts);
+    }
 
     document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
@@ -2175,6 +2364,8 @@ if (!isLoginPage) {
 
     window.onload = async () => {
         touchUserInteraction();
+        await preloadDiscoverySubnet();
+        renderDiscoveredLanHosts();
         await runTaskOnce("summary", loadDashboardSummary);
         await runTaskOnce("hosts-full", loadHosts);
         await runTaskOnce("trash", loadTrashHosts);

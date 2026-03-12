@@ -25,3 +25,16 @@ class HostCreate(BaseModel):
     url: Optional[str] = None
     http_url: Optional[str] = None
     snmp_enabled: bool = False
+
+
+class NetworkDiscoveryRequest(BaseModel):
+    subnet: str
+
+
+class NetworkImportHostItem(BaseModel):
+    name: str
+    address: str
+
+
+class NetworkImportRequest(BaseModel):
+    hosts: List[NetworkImportHostItem]

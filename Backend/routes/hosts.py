@@ -1,13 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+import ipaddress
 import json
+import re
+import socket
+import subprocess
+import xml.etree.ElementTree as ET
+import psutil
 from Backend.database import get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User, SNMPMetric
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
 from Backend.notifications import telegram_health_check
-from Backend.schemas import HostCreate, HostUpdate, LoginRequest, PasswordChangeRequest
+from Backend.schemas import (
+    HostCreate,
+    HostUpdate,
+    LoginRequest,
+    PasswordChangeRequest,
+    NetworkDiscoveryRequest,
+    NetworkImportRequest,
+)
 from Backend.utils import (
     is_ip,
     reverse_dns,
@@ -22,6 +35,22 @@ from Backend.dependencies import get_current_user
 from Backend.security import verify_password, create_access_token, hash_password
 
 router = APIRouter()
+
+_RFC1918_RANGES = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
+_IGNORED_INTERFACE_PREFIXES = (
+    "lo",
+    "docker",
+    "br-",
+    "veth",
+    "virbr",
+    "tun",
+    "tap",
+)
+_MAX_DISCOVERY_ADDRESSES = 4096
 
 
 def _apply_snmp_policy(host: Host, snmp_enabled: bool) -> None:
@@ -83,6 +112,209 @@ def _resolve_http_input(data) -> str | None:
     preferred = (data.url or "").strip() if hasattr(data, "url") else ""
     legacy = (data.http_url or "").strip() if hasattr(data, "http_url") else ""
     return preferred or legacy or None
+
+
+def _slug_ip_name(ip_value: str) -> str:
+    safe = re.sub(r"[^0-9a-zA-Z]+", "-", str(ip_value)).strip("-")
+    return f"auto-{safe}" if safe else "auto-host"
+
+
+def _is_rfc1918_private(network: ipaddress.IPv4Network | ipaddress.IPv6Network) -> bool:
+    return any(network.subnet_of(rng) for rng in _RFC1918_RANGES)
+
+
+def _validate_private_subnet(subnet: str) -> str:
+    raw = (subnet or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Subnet é obrigatória")
+
+    try:
+        network = ipaddress.ip_network(raw, strict=False)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Subnet inválida. Use formato CIDR, ex: 192.168.0.0/24")
+
+    if not _is_rfc1918_private(network):
+        raise HTTPException(status_code=400, detail="Subnet deve ser privada RFC1918")
+
+    if network.num_addresses > _MAX_DISCOVERY_ADDRESSES:
+        raise HTTPException(status_code=400, detail="Subnet muito grande para varredura automática")
+
+    return str(network)
+
+
+def _interface_ignored(interface_name: str) -> bool:
+    lowered = (interface_name or "").strip().lower()
+    return any(lowered.startswith(prefix) for prefix in _IGNORED_INTERFACE_PREFIXES)
+
+
+def _run_nmap_discovery(subnet: str) -> str:
+    try:
+        result = subprocess.run(
+            ["nmap", "-sn", subnet, "-oX", "-"],
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Nmap não está instalado no servidor")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Descoberta de rede excedeu o tempo limite")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Falha ao executar descoberta: {exc}")
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Nmap retornou erro ({result.returncode}): {stderr or 'erro desconhecido'}",
+        )
+
+    return result.stdout or ""
+
+
+def _parse_nmap_hosts(xml_text: str) -> list[dict]:
+    if not xml_text.strip():
+        return []
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        raise HTTPException(status_code=500, detail="Resposta XML do Nmap inválida")
+
+    hosts = []
+    for host_node in root.findall("host"):
+        status = host_node.find("status")
+        if status is None or status.attrib.get("state") != "up":
+            continue
+
+        ipv4 = None
+        for addr in host_node.findall("address"):
+            if addr.attrib.get("addrtype") == "ipv4":
+                ipv4 = (addr.attrib.get("addr") or "").strip()
+                break
+
+        if not ipv4:
+            continue
+
+        hostname_value = None
+        hostnames = host_node.find("hostnames")
+        if hostnames is not None:
+            hn = hostnames.find("hostname")
+            if hn is not None:
+                hostname_value = (hn.attrib.get("name") or "").strip() or None
+
+        hosts.append({
+            "address": ipv4,
+            "hostname": hostname_value,
+        })
+
+    return hosts
+
+
+def _build_unique_name(base_name: str, used_names: set[str]) -> str:
+    candidate = base_name
+    suffix = 2
+    while candidate in used_names:
+        candidate = f"{base_name}-{suffix}"
+        suffix += 1
+    used_names.add(candidate)
+    return candidate
+
+
+def _prepare_discovery_result(db: Session, raw_hosts: list[dict]) -> list[dict]:
+    if not raw_hosts:
+        return []
+
+    addresses = sorted({str(item.get("address") or "").strip() for item in raw_hosts if item.get("address")})
+    existing_hosts = db.query(Host).filter(Host.address.in_(addresses)).all()
+    existing_ip_set = {h.address for h in existing_hosts}
+    used_names = {str(row[0]).strip() for row in db.query(Host.name).all() if row[0]}
+    seen_ips = set()
+
+    prepared = []
+    temp_idx = 1
+    for item in raw_hosts:
+        address = str(item.get("address") or "").strip()
+        if not address or address in seen_ips:
+            continue
+        seen_ips.add(address)
+
+        hostname = item.get("hostname")
+        base_name = str(hostname).strip() if hostname else _slug_ip_name(address)
+        safe_name = _build_unique_name(base_name, used_names)
+
+        prepared.append({
+            "id": f"temp-{temp_idx}",
+            "name": safe_name,
+            "address": address,
+            "hostname": hostname,
+            "already_exists": address in existing_ip_set,
+        })
+        temp_idx += 1
+
+    return prepared
+
+
+def _detect_local_network() -> str | None:
+    outbound_ip = None
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            outbound_ip = sock.getsockname()[0]
+    except Exception:
+        outbound_ip = None
+
+    try:
+        stats_by_iface = psutil.net_if_stats()
+    except Exception:
+        stats_by_iface = {}
+
+    try:
+        interfaces = psutil.net_if_addrs().items()
+    except Exception:
+        interfaces = []
+
+    candidates = []
+    for iface, addrs in interfaces:
+        if _interface_ignored(iface):
+            continue
+        iface_stats = stats_by_iface.get(iface)
+        if iface_stats is not None and not iface_stats.isup:
+            continue
+
+        for addr in addrs:
+            if addr.family != socket.AF_INET:
+                continue
+
+            ip = (addr.address or "").strip()
+            netmask = (addr.netmask or "").strip()
+            if not ip or ip.startswith("127.") or not netmask:
+                continue
+
+            try:
+                network = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
+            except ValueError:
+                continue
+
+            if not _is_rfc1918_private(network):
+                continue
+
+            candidates.append({
+                "iface": iface,
+                "ip": ip,
+                "cidr": str(network),
+            })
+
+    if not candidates:
+        return None
+
+    if outbound_ip:
+        for candidate in candidates:
+            if candidate["ip"] == outbound_ip:
+                return candidate["cidr"]
+
+    return candidates[0]["cidr"]
 
 
 def _reset_host_operational_state(host: Host) -> None:
@@ -283,6 +515,131 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
 
         return host
 
+
+
+@router.post("/network/discover")
+def network_discover(
+    data: NetworkDiscoveryRequest,
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    subnet = _validate_private_subnet(data.subnet)
+    xml_result = _run_nmap_discovery(subnet)
+    parsed_hosts = _parse_nmap_hosts(xml_result)
+    hosts = _prepare_discovery_result(db, parsed_hosts)
+
+    return {
+        "subnet": subnet,
+        "found": len(hosts),
+        "hosts": hosts,
+    }
+
+
+@router.get("/network/default-subnet")
+def network_default_subnet(user: str = Depends(get_current_user)):
+    subnet = _detect_local_network()
+    return {"subnet": subnet or None}
+
+
+@router.post("/network/import")
+def network_import(
+    data: NetworkImportRequest,
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    requested_hosts = list(data.hosts or [])
+    results = []
+
+    existing_ip_set = {row[0] for row in db.query(Host.address).all() if row[0]}
+    used_names = {row[0] for row in db.query(Host.name).all() if row[0]}
+    seen_addresses_in_request = set()
+    created_count = 0
+    skipped_count = 0
+
+    for item in requested_hosts:
+        address = str(item.address or "").strip()
+        raw_name = str(item.name or "").strip()
+
+        if not address:
+            skipped_count += 1
+            results.append({
+                "name": raw_name or None,
+                "address": address,
+                "created": False,
+                "reason": "invalid_address",
+            })
+            continue
+
+        try:
+            ipaddress.ip_address(address)
+        except ValueError:
+            skipped_count += 1
+            results.append({
+                "name": raw_name or None,
+                "address": address,
+                "created": False,
+                "reason": "invalid_address",
+            })
+            continue
+
+        if address in seen_addresses_in_request:
+            skipped_count += 1
+            results.append({
+                "name": raw_name or _slug_ip_name(address),
+                "address": address,
+                "created": False,
+                "reason": "duplicate_in_request",
+            })
+            continue
+        seen_addresses_in_request.add(address)
+
+        if address in existing_ip_set:
+            skipped_count += 1
+            results.append({
+                "name": raw_name or _slug_ip_name(address),
+                "address": address,
+                "created": False,
+                "reason": "already_exists",
+            })
+            continue
+
+        base_name = raw_name or _slug_ip_name(address)
+        final_name = _build_unique_name(base_name, used_names)
+
+        host = Host(
+            name=final_name,
+            address=address,
+            port=None,
+            tcp_ports=None,
+            active=True,
+            active_time=None,
+            deleted_at=None,
+            baseline_pending=True,
+            status="UNKNOWN",
+            status_ping="UNKNOWN",
+            status_tcp="UNKNOWN",
+            http_url=None,
+            snmp_enabled=False,
+            snmp_community=None,
+        )
+
+        db.add(host)
+        existing_ip_set.add(address)
+        created_count += 1
+        results.append({
+            "name": final_name,
+            "address": address,
+            "created": True,
+        })
+
+    db.commit()
+
+    return {
+        "requested": len(requested_hosts),
+        "created": created_count,
+        "skipped": skipped_count,
+        "results": results,
+    }
 
 
 @router.get("/hosts/list")
