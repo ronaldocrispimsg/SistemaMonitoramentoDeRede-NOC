@@ -106,7 +106,7 @@ def _get_degraded_streak(host_id: int) -> int:
 
 
 def determine_primary_check(host: Host) -> str:
-    if host.http_url:
+    if bool(getattr(host, "http_enabled", True)):
         return "HTTP"
     if _host_tcp_ports(host):
         return "TCP"
@@ -145,17 +145,19 @@ def determine_operational_state(host: Host, ping_result, tcp_result, http_result
 
 
 def _resolve_host_check_url(host: Host) -> str | None:
+    if not bool(getattr(host, "http_enabled", True)):
+        return None
+
     ports = _host_tcp_ports(host)
     primary_port = ports[0] if ports else None
 
     if host.http_url:
         return host.http_url
     if primary_port in (80, 443):
-        protocol = "https" if primary_port == 443 else "http"
-        return f"{protocol}://{host.address}"
+        return host.address
     if primary_port:
-        return f"http://{host.address}:{primary_port}"
-    return None
+        return f"{host.address}:{primary_port}"
+    return host.address or None
 
 
 def _host_tcp_ports(host: Host) -> list[int]:
@@ -392,6 +394,46 @@ def _host_check_blocking(host_id: int) -> None:
         url = _resolve_host_check_url(host)
         if url:
             http_result = http_check(url)
+            protocol = str(http_result.get("protocol") or "").lower()
+            host.last_http_protocol = protocol.upper() if protocol in {"http", "https"} else None
+            host.http_latency = http_result.get("latency")
+            host.https_latency = None
+            host.web_tcp_port = 443 if protocol == "https" else (80 if protocol == "http" else None)
+            host.web_tcp_port_latency = None
+
+            def _probe_aux_port(target_port: int) -> dict:
+                existing = next(
+                    (r for r in tcp_results if int(r.get("port") or -1) == int(target_port)),
+                    None,
+                )
+                return existing or tcp_check(ip, int(target_port))
+
+            http_port_result = _probe_aux_port(80)
+            https_port_result = _probe_aux_port(443)
+
+            host.tcp_http_port_ok = bool(http_port_result.get("success"))
+            host.tcp_http_port_latency = (
+                http_port_result.get("latency") if host.tcp_http_port_ok else None
+            )
+            host.tcp_https_port_ok = bool(https_port_result.get("success"))
+            host.tcp_https_port_latency = (
+                https_port_result.get("latency") if host.tcp_https_port_ok else None
+            )
+
+            if host.web_tcp_port == 80:
+                host.web_tcp_port_latency = host.tcp_http_port_latency
+            elif host.web_tcp_port == 443:
+                host.web_tcp_port_latency = host.tcp_https_port_latency
+        else:
+            host.last_http_protocol = None
+            host.http_latency = None
+            host.https_latency = None
+            host.web_tcp_port = None
+            host.web_tcp_port_latency = None
+            host.tcp_http_port_ok = None
+            host.tcp_http_port_latency = None
+            host.tcp_https_port_ok = None
+            host.tcp_https_port_latency = None
 
         score, severity = compute_health(ping_result, tcp_result, http_result)
         host.health_score = score

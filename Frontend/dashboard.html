@@ -10,18 +10,20 @@
 </head>
 
 <body>
-<div class="container">
-<div class="dashboard-hero">
-    <div class="dashboard-hero-top">
-        <div class="hero-copy">
+<header class="app-topbar">
+    <div class="app-topbar-inner">
+        <button id="openMenuBtn" class="menu-trigger-btn icon-btn nav" title="Abrir menu" aria-label="Abrir menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <div class="hero-copy app-topbar-title">
             <h1>Dashboard</h1>
         </div>
-        <div class="top-actions top-actions-hero">
-            <button id="changePasswordBtn">Alterar Senha</button>
-            <button id="logoutBtn">Sair do Sistema</button>
-        </div>
+        <a class="toolbar-link-btn icon-btn nav" href="incidents.html" title="Abrir histórico completo de incidentes" aria-label="Abrir histórico completo de incidentes">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
+        </a>
     </div>
-</div>
+</header>
+<div class="container app-content">
 
 <section class="panel-section">
     <article class="overview-card">
@@ -37,12 +39,20 @@
             <input id="name" placeholder="Nome" required>
             <input id="address" placeholder="Endereço/IP" required>
             <input id="http_url" placeholder="URL HTTP (opcional)">
+            <label class="snmp-enable-field snmp-enable-switch">
+                <input id="http_enabled" type="checkbox" checked>
+                <span class="snmp-switch" aria-hidden="true"></span>
+                <span class="snmp-enable-text">
+                    <strong>Check HTTP/HTTPS</strong>
+                    <small>Ativa monitoramento web</small>
+                </span>
+            </label>
             <div id="portsField" class="ports-field">
               <div class="ports-field-head">
                 <span>Portas TCP</span>
                 <button id="addPortBtn" type="button" class="add-port-btn" title="Adicionar porta" aria-label="Adicionar porta">+</button>
               </div>
-              <small class="ports-help">Se não alterar, 80 e 443 serão monitoradas.</small>
+              <small class="ports-help">Informe apenas portas TCP que deseja monitorar.</small>
               <div id="portsContainer" class="ports-container"></div>
             </div>
             <label class="snmp-enable-field snmp-enable-switch">
@@ -65,14 +75,14 @@
             <input id="discoverSubnet" placeholder="Subnet CIDR (ex.: 192.168.0.0/24)">
             <button id="discoverBtn" type="button">Descobrir rede</button>
         </div>
-        <div id="networkDiscoveryInfo" class="network-discovery-info"></div>
+        <div id="networkDiscoveryInfo" class="network-discovery-info" aria-live="polite"></div>
         <div id="networkDiscoveryList" class="network-discovery-list">
             <small>Nenhuma descoberta executada.</small>
         </div>
         <div class="network-discovery-actions">
             <button id="importSelectedBtn" type="button">Adicionar selecionados</button>
         </div>
-        <div id="networkImportResult" class="network-import-result"></div>
+        <div id="networkImportResult" class="network-import-result" aria-live="polite"></div>
     </article>
 </section>
 
@@ -89,7 +99,12 @@
     <div class="hosts-toolbar">
       <div class="hosts-toolbar-main">
         <h2>Hosts</h2>
-        <button id="openTrashBtn" class="trash-open-btn" title="Abrir lixeira" aria-label="Abrir lixeira"><span>🗑</span> Lixeira</button>
+        <button id="openTrashBtn" class="trash-open-btn" title="Abrir lixeira" aria-label="Abrir lixeira">
+            <span class="btn-icon-wrap">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l1 2h4v2H4V6h4l1-2zm-2 6h2v8H7v-8zm4 0h2v8h-2v-8zm4 0h2v8h-2v-8z"/></svg>
+            </span>
+            Lixeira
+        </button>
       </div>
       <button id="refreshBtn">Atualizar Lista</button>
     </div>
@@ -107,6 +122,14 @@
     <input id="modal-name" disabled>
     <input id="modal-ip" placeholder="Endereco/IP">
     <input id="modal-http-url" placeholder="URL HTTP (opcional)">
+    <label class="snmp-enable-field snmp-enable-switch">
+      <input id="modal-http-enabled" type="checkbox">
+      <span class="snmp-switch" aria-hidden="true"></span>
+      <span class="snmp-enable-text">
+        <strong>Check HTTP/HTTPS</strong>
+        <small>Ativa monitoramento web</small>
+      </span>
+    </label>
     <div id="modalPortsField" class="ports-field">
       <div class="ports-field-head">
         <span>Portas TCP</span>
@@ -124,8 +147,8 @@
     </label>
 
     <div class="modal-actions">
-      <button onclick="submitModalEdit()">Salvar</button>
-      <button onclick="closeModal()">Cancelar</button>
+      <button type="button" onclick="submitModalEdit()">Salvar</button>
+      <button type="button" onclick="closeModal()">Cancelar</button>
     </div>
 
   </div>
@@ -141,8 +164,8 @@
     <input id="confirm-pwd" type="password" placeholder="Confirmar nova senha">
 
     <div class="modal-actions">
-      <button onclick="changePassword()">Alterar</button>
-      <button onclick="closeChangePwdModal()">Cancelar</button>
+      <button type="button" onclick="changePassword()">Alterar</button>
+      <button type="button" onclick="closeChangePwdModal()">Cancelar</button>
     </div>
 
   </div>
@@ -161,12 +184,31 @@
   </div>
 </div>
 
-<div class="timeline-container panel-section">
-    <h3>Histórico de Incidentes Recentes</h3>
-    <div id="incidentTimeline" class="timeline">
-        </div>
 </div>
-</div>
+
+<div id="sidebarOverlay" class="sidebar-overlay hidden"></div>
+<aside id="sidebarMenu" class="sidebar-menu hidden" aria-hidden="true">
+    <div class="sidebar-header">
+        <strong>Conta</strong>
+        <button id="closeMenuBtn" class="sidebar-close-btn icon-btn nav" type="button" title="Fechar menu" aria-label="Fechar menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+    </div>
+    <div class="sidebar-actions">
+        <button id="changePasswordBtn" type="button">
+            <span class="btn-icon-wrap">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7a5 5 0 00-5-5zm-3 8V7a3 3 0 116 0v3H9zm3 3a2 2 0 012 2 2 2 0 11-2-2z"/></svg>
+            </span>
+            Alterar Senha
+        </button>
+        <button id="logoutBtn" type="button">
+            <span class="btn-icon-wrap">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M8 12h10"/></svg>
+            </span>
+            Sair do Sistema
+        </button>
+    </div>
+</aside>
 </body>
 <script src="app.js"></script>
 </html>

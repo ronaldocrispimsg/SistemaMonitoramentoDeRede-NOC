@@ -105,6 +105,12 @@ function showToast(type, message, duration = 3200) {
     }, duration);
 }
 
+function setInlineState(element, message, type = "info") {
+    if (!element) return;
+    element.className = `ui-state ui-state-${type}`;
+    element.textContent = message;
+}
+
 function touchUserInteraction() {
     lastUserInteractionAt = Date.now();
 }
@@ -144,8 +150,7 @@ async function runHeavyRefresh() {
     if (shouldDeferHeavyRefresh()) return;
     await Promise.all([
         runTaskOnce("hosts-full", loadHosts),
-        runTaskOnce("trash", loadTrashHosts),
-        runTaskOnce("timeline", loadTimeline)
+        runTaskOnce("trash", loadTrashHosts)
     ]);
 }
 
@@ -414,8 +419,8 @@ function addPortInput(container, value = "", removable = false, placeholder = "P
 function resetCreatePorts() {
     if (!portsContainer) return;
     portsContainer.innerHTML = "";
-    addPortInput(portsContainer, 80, false, "Porta");
-    addPortInput(portsContainer, 443, false, "Porta");
+    addPortInput(portsContainer, "", false, "Porta");
+    addPortInput(portsContainer, "", false, "Porta");
     addPortInput(portsContainer, "", false, "Porta");
 }
 
@@ -500,6 +505,7 @@ if (hostForm) {
         const nameInput = document.getElementById("name");
         const addressInput = document.getElementById("address");
         const httpUrlInput = document.getElementById("http_url");
+        const httpEnabledInput = document.getElementById("http_enabled");
         const snmpEnabledInput = document.getElementById("snmp_enabled");
         let ports = [];
         try {
@@ -516,6 +522,7 @@ if (hostForm) {
             port: ports.length ? ports[0] : null,
             url: httpUrlInput.value || null,
             http_url: httpUrlInput.value || null,
+            http_enabled: !!httpEnabledInput?.checked,
             snmp_enabled: !!snmpEnabledInput?.checked
         };
 
@@ -532,6 +539,7 @@ if (hostForm) {
                 nameInput.value = "";
                 addressInput.value = "";
                 httpUrlInput.value = "";
+                if (httpEnabledInput) httpEnabledInput.checked = true;
                 if (snmpEnabledInput) snmpEnabledInput.checked = false;
                 resetCreatePorts();
                 loadHosts();
@@ -590,14 +598,14 @@ async function discoverNetworkHosts() {
 
     const subnet = String(subnetInput.value || "").trim();
     if (!subnet) {
-        if (resultBox) resultBox.textContent = "Informe uma subnet no formato CIDR.";
+        if (resultBox) setInlineState(resultBox, "Informe uma subnet no formato CIDR.", "warning");
         showToast("warning", "Informe uma subnet no formato CIDR.");
         return;
     }
 
     discoverBtn.disabled = true;
     discoverBtn.textContent = "Descobrindo...";
-    if (resultBox) resultBox.textContent = "";
+    if (resultBox) setInlineState(resultBox, "Executando descoberta...", "info");
 
     try {
         const res = await fetchWithAuth(`${API}/network/discover`, {
@@ -609,18 +617,18 @@ async function discoverNetworkHosts() {
 
         const data = await res.json();
         if (!res.ok) {
-            if (resultBox) resultBox.textContent = data.detail || "Erro na descoberta de rede.";
+            if (resultBox) setInlineState(resultBox, data.detail || "Erro na descoberta de rede.", "error");
             showToast("error", data.detail || "Erro na descoberta de rede.");
             return;
         }
 
         discoveredLanHosts = Array.isArray(data.hosts) ? data.hosts : [];
         renderDiscoveredLanHosts();
-        if (resultBox) resultBox.textContent = "";
+        if (resultBox) setInlineState(resultBox, "Descoberta concluída. Selecione os hosts para importar.", "success");
         showToast("success", `Descoberta concluída: ${data.found ?? discoveredLanHosts.length} host(s).`);
     } catch (err) {
         console.error("Erro na descoberta de rede:", err);
-        if (resultBox) resultBox.textContent = "Falha ao executar descoberta de rede.";
+        if (resultBox) setInlineState(resultBox, "Falha ao executar descoberta de rede.", "error");
         showToast("error", "Falha ao executar descoberta de rede.");
     } finally {
         discoverBtn.disabled = false;
@@ -704,7 +712,11 @@ async function importSelectedLanHosts() {
         }
 
         if (resultBox) {
-            resultBox.textContent = `Solicitados: ${data.requested} • Criados: ${data.created} • Ignorados: ${data.skipped}`;
+            setInlineState(
+                resultBox,
+                `Solicitados: ${data.requested} • Criados: ${data.created} • Ignorados: ${data.skipped}`,
+                "success"
+            );
         }
 
         const createdAddresses = new Set(
@@ -737,42 +749,40 @@ async function loadHosts() {
     if (!div) return;
 
     try {
-        const openStateByHost = {};
-        div.querySelectorAll(".card").forEach((card) => {
-            const id = card.id || "";
-            if (!id.startsWith("card-")) return;
-            const hostName = id.slice(5);
-            openStateByHost[hostName] = {
-                historyOpen: !document.getElementById(`history-${hostName}`)?.classList.contains("hidden"),
-                latencyOpen: !document.getElementById(`chart-container-${hostName}`)?.classList.contains("hidden"),
-                snmpOpen: !document.getElementById(`snmp-chart-box-${hostName}`)?.classList.contains("hidden"),
-                availabilityTypeOpen: !document.getElementById(`availability-chart-type-box-${hostName}`)?.classList.contains("hidden"),
-                availabilityOpen: !document.getElementById(`availability-chart-box-${hostName}`)?.classList.contains("hidden")
-            };
-        });
-
         const res = await fetchWithAuth(`${API}/hosts/list`);
         if (!res) {
-            div.innerHTML = "<p style='color:orange'>Não foi possível carregar os hosts.</p>";
+            div.innerHTML = "<div class='ui-state ui-state-warning'>Não foi possível carregar os hosts.</div>";
             return;
         }
 
         const hosts = await res.json();
+        if (!Array.isArray(hosts) || hosts.length === 0) {
+            div.innerHTML = "<div class='ui-state ui-state-empty'>Nenhum host cadastrado ainda.</div>";
+            return;
+        }
         div.innerHTML = "";
 
         for (const h of hosts) {
             const card = document.createElement("div");
             const hostPorts = parseHostPorts(h);
-            const primaryPort = hostPorts.length ? hostPorts[0] : null;
-            const extraPortsCount = hostPorts.length > 1 ? hostPorts.length - 1 : 0;
-            const hostAddressLabel = `${h.address}${primaryPort ? ":" + primaryPort : ""}${extraPortsCount ? ` (+${extraPortsCount})` : ""}`;
+            const hostAddressLabel = `${h.address}`;
+            const tcpPortsLabel = hostPorts.length ? hostPorts.join(", ") : "Nenhuma";
+            const httpEnabled = !!h.http_enabled;
+            const webCheckBadge = httpEnabled
+                ? `<span class="web-check-badge web-check-on">Ativo</span>`
+                : `<span class="web-check-badge web-check-off">Inativo</span>`;
+            const httpProtocolLabel = httpEnabled
+                ? (h.http_protocol ? String(h.http_protocol).toUpperCase() : "Aguardando")
+                : "-";
             const visualState = hostVisualState(h);
+            const monitorFlag = hostMonitorFlag(h);
             const causeClass = probableCauseClass(h);
             const incidentBadgeHtml = h.has_open_incident
                 ? `<span class="incident-badge" title="Existe incidente aberto para este host">INCIDENTE ABERTO</span>`
                 : "";
             card.className = `card ${visualState.cardClass}`;
             card.id = `card-${h.name}`;
+            card.dataset.face = "1";
 
             let statusColor = "bg-secondary";
             if (h.status === "UP") statusColor = "bg-success";
@@ -858,11 +868,6 @@ async function loadHosts() {
                             </div>
                         </div>
             ` : "";
-            const snmpButtonHtml = snmpConfigured ? `
-                        <button onclick="toggleSnmpChart('${h.name}')">
-                            Gráfico SNMP
-                        </button>
-            ` : "";
             const snmpChartBoxHtml = snmpConfigured ? `
                 <div id="snmp-chart-box-${h.name}" class="chart-box hidden" style="margin-top: 10px;">
                     <div class="chart-title">Histórico SNMP</div>
@@ -882,12 +887,13 @@ async function loadHosts() {
                             </strong>
                         </div>
                         <div class="host-top-actions">
+                            <span class="host-monitor-flag ${monitorFlag.className}" title="Estado de monitoramento">${monitorFlag.label}</span>
                             ${incidentBadgeHtml}
                             <button
                                 class="host-delete-btn"
                                 type="button"
-                                title="Apagar host"
-                                aria-label="Apagar host"
+                                title="Excluir host"
+                                aria-label="Excluir host"
                                 onclick='softDeleteHost(${h.id}, ${JSON.stringify(h.name)})'
                             >✕</button>
                         </div>
@@ -901,12 +907,28 @@ async function loadHosts() {
                     </div>
                 </div>
 
+                <div class="face-nav">
+                    <button class="face-nav-btn face-prev-btn hidden" type="button" title="Face anterior" aria-label="Face anterior" onclick="prevHostFace('${h.name}')">${iconSvg("arrow_left")}</button>
+                    <div class="icon-actions">
+                        <button class="icon-btn" type="button" title="Histórico" aria-label="Histórico" onclick="toggleHistory('${h.name}')">${iconSvg("history")}</button>
+                        <button class="icon-btn" type="button" title="Gráfico de latência" aria-label="Gráfico de latência" onclick="toggleLatencyChart('${h.name}')">${iconSvg("latency")}</button>
+                        ${snmpConfigured ? `<button class="icon-btn" type="button" title="Gráfico SNMP" aria-label="Gráfico SNMP" onclick="toggleSnmpChart('${h.name}')">${iconSvg("snmp")}</button>` : ""}
+                        <button class="icon-btn" type="button" title="Disponibilidade por tipo" aria-label="Disponibilidade por tipo" onclick="toggleAvailabilityChartType('${h.name}')">${iconSvg("availability_type")}</button>
+                        <button class="icon-btn" type="button" title="Disponibilidade geral" aria-label="Disponibilidade geral" onclick="toggleAvailabilityChart('${h.name}')">${iconSvg("availability")}</button>
+                        <button class="icon-btn" type="button" title="Editar host" aria-label="Editar host" onclick='openEditModal(${JSON.stringify(h.name)}, ${JSON.stringify(h.address)}, ${JSON.stringify(hostPorts)}, ${JSON.stringify(h.http_url || "")}, ${h.http_enabled ? "true" : "false"}, ${h.snmp_enabled ? "true" : "false"})'>${iconSvg("edit")}</button>
+                    </div>
+                    <button class="face-nav-btn face-next-btn" type="button" title="Próxima face" aria-label="Próxima face" onclick="nextHostFace('${h.name}')">${iconSvg("arrow_right")}</button>
+                </div>
+
                 <!-- Body: três colunas (Resumo | Rede | SNMP) -->
-                <div class="host-card-body">
-                    <div class="host-col host-col-summary">
+                <div class="host-card-body compact host-faces-wrap">
+                    <div class="host-col host-col-summary host-face active" data-face="1">
                         <div class="host-section-card">
                             <div class="metrics-title">Resumo</div>
                             <div class="host-summary-list">
+                                <small><b>Portas TCP monitoradas:</b> ${tcpPortsLabel}</small>
+                                <small><b>Check Web:</b> ${webCheckBadge}</small>
+                                <small><b>Protocolo resolvido:</b> ${httpProtocolLabel}</small>
                                 <small><b>Saúde:</b> ${h.health_score ?? "N/A"}%</small>
                                 <small><b>Disponibilidade:</b> ${availability10m}%</small>
                                 <small><b>Tendência HTTP:</b> ${trendIcon(h.trend_http)} ${h.trend_http ?? "N/A"}</small>
@@ -916,7 +938,7 @@ async function loadHosts() {
                         </div>
                     </div>
 
-                    <div class="host-col host-col-network">
+                    <div class="host-col host-col-network host-face" data-face="2">
                         <div class="host-section-card">
                             <div class="metrics-title">Rede</div>
                             <div class="network-split">
@@ -948,7 +970,7 @@ async function loadHosts() {
                         </div>
                     </div>
 
-                    <div class="host-col host-col-snmp">
+                    <div class="host-col host-col-snmp host-face" data-face="3">
                         ${snmpConfigured ? snmpSectionHtml : `
                             <div class="host-section-card snmp-section snmp-empty">
                                 <div class="snmp-header">
@@ -960,18 +982,6 @@ async function loadHosts() {
                                 </div>
                             </div>
                         `}
-                    </div>
-                </div>
-
-                <!-- Footer: ações secundárias -->
-                <div class="host-card-actions">
-                    <div class="button-group">
-                        <button class="history-btn" onclick="toggleHistory('${h.name}')">Histórico</button>
-                        <button class="latency-btn" onclick="toggleLatencyChart('${h.name}')">Gráfico de latência</button>
-                        ${snmpButtonHtml}
-                        <button onclick="toggleAvailabilityChartType('${h.name}')">Gráfico de disponibilidade por tipo</button>
-                        <button onclick="toggleAvailabilityChart('${h.name}')">Gráfico de disponibilidade geral</button>
-                        <button onclick='openEditModal(${JSON.stringify(h.name)}, ${JSON.stringify(h.address)}, ${JSON.stringify(hostPorts)}, ${JSON.stringify(h.http_url || "")}, ${h.snmp_enabled ? "true" : "false"})'>Editar</button>
                     </div>
                 </div>
 
@@ -995,49 +1005,18 @@ async function loadHosts() {
             div.appendChild(card);
 
             // ATUALIZA OS DADOS DE PING/TCP
-            loadLastResult(h.name, hostPorts);
-
-            // Restaura estado aberto para não "reiniciar" visual a cada refresh.
-            const state = openStateByHost[h.name];
-            if (state?.historyOpen) {
-                const historyBox = document.getElementById(`history-${h.name}`);
-                if (historyBox) {
-                    historyBox.classList.remove("hidden");
-                    loadHistory(h.name);
-                }
-            }
-
-            if (state?.latencyOpen) {
-                const container = document.getElementById("chart-container-" + h.name);
-                if (container) {
-                    container.classList.remove("hidden");
-                    loadLatencyChart(h.name);
-                }
-            }
-
-            if (state?.snmpOpen) {
-                const snmpBox = document.getElementById("snmp-chart-box-" + h.name);
-                if (snmpBox) {
-                    snmpBox.classList.remove("hidden");
-                    loadSnmpChart(h.name);
-                }
-            }
-
-            if (state?.availabilityTypeOpen) {
-                const typeBox = document.getElementById("availability-chart-type-box-" + h.name);
-                if (typeBox) {
-                    typeBox.classList.remove("hidden");
-                    loadAvailabilityChartType(h.name);
-                }
-            }
-
-            if (state?.availabilityOpen) {
-                const availBox = document.getElementById("availability-chart-box-" + h.name);
-                if (availBox) {
-                    availBox.classList.remove("hidden");
-                    loadAvailability(h.name);
-                }
-            }
+            loadLastResult(
+                h.name,
+                hostPorts,
+                httpEnabled,
+                h.http_protocol,
+                h.http_latency,
+                h.tcp_http_port_latency,
+                h.tcp_https_port_latency,
+                h.tcp_http_port_ok,
+                h.tcp_https_port_ok
+            );
+            updateHostFace(h.name, 1);
 
         }
 
@@ -1069,7 +1048,17 @@ async function loadHostsQuick() {
         for (const h of hosts) {
             const resultBox = document.getElementById(`result-${h.name}`);
             if (resultBox) {
-                loadLastResult(h.name, parseHostPorts(h));
+                loadLastResult(
+                    h.name,
+                    parseHostPorts(h),
+                    !!h.http_enabled,
+                    h.http_protocol,
+                    h.http_latency,
+                    h.tcp_http_port_latency,
+                    h.tcp_https_port_latency,
+                    h.tcp_http_port_ok,
+                    h.tcp_https_port_ok
+                );
             }
 
             const availBox = document.getElementById("availability-chart-box-" + h.name);
@@ -1138,7 +1127,17 @@ function renderTcpPortsStatus(hostName, checks, expectedPorts = []) {
     }).join("");
 }
 
-async function loadLastResult(name, expectedPorts = []) {
+async function loadLastResult(
+    name,
+    expectedPorts = [],
+    httpEnabled = true,
+    httpProtocol = null,
+    httpLatency = null,
+    tcpHttpPortLatency = null,
+    tcpHttpsPortLatency = null,
+    tcpHttpPortOk = null,
+    tcpHttpsPortOk = null
+) {
     const box = document.getElementById("result-" + name);
     if (!box) return;
 
@@ -1150,7 +1149,7 @@ async function loadLastResult(name, expectedPorts = []) {
     renderTcpPortsStatus(name, data.checks, expectedPorts);
 
     const lastPing = data.checks.find(c => c.type === "ping");
-    const lastHttp = data.checks.find(c => c.type === "http");
+    const lastHttp = httpEnabled ? data.checks.find(c => c.type === "http") : null;
 
     const pingLikelyFirewallBlocked =
         !!lastPing &&
@@ -1160,14 +1159,33 @@ async function loadLastResult(name, expectedPorts = []) {
     const pingDot = pingLikelyFirewallBlocked
         ? "bg-secondary"
         : (lastPing?.success ? "bg-success" : "bg-danger");
-    const httpDot = lastHttp?.success ? "bg-success" : "bg-danger";
+    const webDot = httpEnabled
+        ? (lastHttp?.success ? "bg-success" : "bg-danger")
+        : "bg-secondary";
 
     const pingLatencyText = pingLikelyFirewallBlocked
         ? "indisponível"
         : (lastPing ? (lastPing.success ? `${lastPing?.latency ?? "sem dados"} ms` : tcpFailureLabel(lastPing.error)) : "sem dados");
-    const httpLatencyText = lastHttp
-        ? (lastHttp.success ? `${lastHttp.latency ?? "sem dados"} ms` : tcpFailureLabel(lastHttp.error))
-        : "sem dados";
+    const resolvedProtocol = String(httpProtocol || "").toUpperCase();
+    const protocolLabel = resolvedProtocol === "HTTPS" || resolvedProtocol === "HTTP"
+        ? resolvedProtocol
+        : "Web";
+    const protocolValue = !httpEnabled
+        ? "inativo"
+        : (httpLatency !== null && httpLatency !== undefined
+            ? `${httpLatency} ms`
+            : "Aguardando");
+
+    const formatAuxTcp = (enabled, latency, okFlag) => {
+        if (!enabled) return "-";
+        if (latency !== null && latency !== undefined) return `${latency} ms`;
+        if (okFlag === false) return "falha";
+        if (okFlag === true) return "sem dados";
+        return "Aguardando";
+    };
+
+    const portaHttpText = formatAuxTcp(httpEnabled, tcpHttpPortLatency, tcpHttpPortOk);
+    const portaHttpsText = formatAuxTcp(httpEnabled, tcpHttpsPortLatency, tcpHttpsPortOk);
 
     box.innerHTML = `
         <div>
@@ -1175,15 +1193,24 @@ async function loadLastResult(name, expectedPorts = []) {
             Ping: ${pingLatencyText}
         </div>
         <div>
-            <span class="status-indicator ${httpDot}"></span>
-            HTTP: ${httpLatencyText}
+            <span class="status-indicator ${webDot}"></span>
+            ${httpEnabled ? protocolLabel : "Web"}: ${httpEnabled ? protocolValue : "Inativo"}
+        </div>
+        <div>
+            <span class="status-indicator ${webDot}"></span>
+            HTTP (TCP 80): ${portaHttpText}
+        </div>
+        <div>
+            <span class="status-indicator ${webDot}"></span>
+            HTTPS (TCP 443): ${portaHttpsText}
         </div>
     `;
 }
 
 async function loadHistory(name) {
     const box = document.getElementById("history-" + name);
-    box.innerHTML = "Carregando histórico...";
+    if (!box) return;
+    box.innerHTML = "<div class='ui-state ui-state-info'>Carregando histórico...</div>";
 
     try {
         const res = await fetchWithAuth(`${API}/host/history/${name}`);
@@ -1192,31 +1219,42 @@ async function loadHistory(name) {
 
         const data = await res.json();
 
-        if (!data.checks.length) {
-            box.innerHTML = "<small>Sem histórico ainda</small>";
+        const checks = Array.isArray(data.checks) ? data.checks.slice(0, 20) : [];
+
+        if (!checks.length) {
+            box.innerHTML = "<div class='ui-state ui-state-empty'>Sem histórico ainda</div>";
             return;
         }
 
-        box.innerHTML = data.checks.map(c => {
+        const linesHtml = checks.map(c => {
             const statusClass = c.success ? "line-success" : "line-error";
             const statusText = c.success ? "OK" : "FAIL";
-            const statusInfo = c.status_code ? `HTTP ${c.status_code ?? c.error ?? ""} — ` : "";
             const typeLabel = c.type === "tcp" && c.tcp_port
                 ? `TCP ${c.tcp_port}`
                 : c.type.toUpperCase();
+            const detailParts = [];
+            if (c.status_code) detailParts.push(`HTTP ${c.status_code}`);
+            if (c.error) detailParts.push(c.error);
+            detailParts.push(c.latency !== null ? `${c.latency} ms` : "---");
+            const detailText = detailParts.join(" • ");
             return `
                 <div class="history-line ${statusClass}">
-                    <span class="type-badge">[${typeLabel}]</span> 
-                    <strong>${statusText}</strong> —
-                    ${statusInfo}
-                    ${c.latency !== null ? c.latency + " ms" : "---"} —
-                    <small>${formatApiTime(c.timestamp)}</small>
+                    <div class="history-line-top">
+                        <span class="type-badge">${typeLabel}</span>
+                        <span class="history-status">${statusText}</span>
+                        <small class="history-time">${formatApiTime(c.timestamp)}</small>
+                    </div>
+                    <div class="history-line-bottom">
+                        <span class="history-detail">${detailText}</span>
+                    </div>
                 </div>
             `;
         }).join("");
 
+        box.innerHTML = `<div class="host-history-scroll">${linesHtml}</div>`;
+
     } catch {
-        box.innerHTML = "Erro ao carregar histórico";
+        box.innerHTML = "<div class='ui-state ui-state-error'>Erro ao carregar histórico</div>";
     }
 }
 
@@ -1228,6 +1266,7 @@ async function toggleHistory(name) {
         return;
     }
 
+    closeHostExpandedPanels(name, box.id);
     box.classList.remove("hidden");
     await loadHistory(name);
 }
@@ -1237,6 +1276,7 @@ async function toggleLatencyChart(name) {
     if (!container) return;
 
     if (container.classList.contains("hidden")) {
+        closeHostExpandedPanels(name, container.id);
         container.classList.remove("hidden");
         await loadLatencyChart(name);
     } else {
@@ -1249,6 +1289,7 @@ async function toggleSnmpChart(name) {
     if (!box) return;
 
     if (box.classList.contains("hidden")) {
+        closeHostExpandedPanels(name, box.id);
         box.classList.remove("hidden");
         await loadSnmpChart(name);
     } else {
@@ -1267,18 +1308,23 @@ async function toggleAvailabilityChartType(name) {
         return;
     }
 
+    closeHostExpandedPanels(name, box.id);
     box.classList.remove("hidden");
     loadAvailabilityChartType(name);
 }
 
 let currentEditHost = null;
 
-function openEditModal(name, ip, ports = [], httpUrl, snmpEnabled = false) {
+function openEditModal(name, ip, ports = [], httpUrl, httpEnabled = true, snmpEnabled = false) {
     currentEditHost = name;
 
     document.getElementById("modal-name").value = name;
     document.getElementById("modal-ip").value = ip || "";
     document.getElementById("modal-http-url").value = httpUrl || "";
+    const modalHttpEnabled = document.getElementById("modal-http-enabled");
+    if (modalHttpEnabled) {
+        modalHttpEnabled.checked = !!httpEnabled;
+    }
     const modalSnmpEnabled = document.getElementById("modal-snmp-enabled");
     if (modalSnmpEnabled) {
         modalSnmpEnabled.checked = !!snmpEnabled;
@@ -1471,6 +1517,7 @@ async function submitModalEdit() {
     const newName = document.getElementById("modal-name").value;
     const newIp = document.getElementById("modal-ip").value;
     const newHttp = document.getElementById("modal-http-url").value;
+    const newHttpEnabled = !!document.getElementById("modal-http-enabled")?.checked;
     const newSnmpEnabled = !!document.getElementById("modal-snmp-enabled")?.checked;
     const modalPortsContainer = document.getElementById("modalPortsContainer");
     let ports = [];
@@ -1490,6 +1537,7 @@ async function submitModalEdit() {
             port: ports.length ? ports[0] : null,
             url: newHttp || null,
             http_url: newHttp || null,
+            http_enabled: newHttpEnabled,
             snmp_enabled: newSnmpEnabled
         })
     });
@@ -1820,6 +1868,79 @@ function probableCauseClass(host) {
     return "cause-normal";
 }
 
+function hostMonitorFlag(host) {
+    if (host?.active === false) return { label: "Pausado", className: "paused" };
+    const status = String(host?.status || "").toUpperCase();
+    if (status === "DOWN") return { label: "Em falha", className: "down" };
+    if (status === "DEGRADED") return { label: "Degradado", className: "degraded" };
+    return { label: "Monitorando", className: "running" };
+}
+
+function iconSvg(name) {
+    const icons = {
+        history: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5l3 2M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"/></svg>`,
+        latency: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h16M6 16l3-5 3 3 4-7 2 3"/></svg>`,
+        snmp: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M7 8h10M7 16h10"/></svg>`,
+        availability_type: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18V8M12 18V6M19 18v-4"/></svg>`,
+        availability: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17l4-5 4 3 6-8"/></svg>`,
+        edit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l4-1 9-9-3-3-9 9-1 4zm10-13l3 3"/></svg>`,
+        trash: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l1 2h4v2H4V6h4l1-2zm-2 6h2v8H7v-8zm4 0h2v8h-2v-8zm4 0h2v8h-2v-8z"/></svg>`,
+        arrow_left: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>`,
+        arrow_right: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6l6 6-6 6"/></svg>`,
+        close: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+    };
+    return icons[name] || "";
+}
+
+function closeHostExpandedPanels(hostName, exceptId = null) {
+    const panelIds = [
+        `history-${hostName}`,
+        `chart-container-${hostName}`,
+        `snmp-chart-box-${hostName}`,
+        `availability-chart-type-box-${hostName}`,
+        `availability-chart-box-${hostName}`
+    ];
+
+    panelIds.forEach((panelId) => {
+        if (exceptId && panelId === exceptId) return;
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        panel.classList.add("hidden");
+    });
+}
+
+function updateHostFace(hostName, faceNumber) {
+    const card = document.getElementById(`card-${hostName}`);
+    if (!card) return;
+    const faces = card.querySelectorAll(".host-face");
+    if (!faces.length) return;
+
+    const safeFace = Math.max(1, Math.min(3, Number(faceNumber) || 1));
+    card.dataset.face = String(safeFace);
+
+    faces.forEach((face) => {
+        const n = Number(face.getAttribute("data-face"));
+        face.classList.toggle("active", n === safeFace);
+    });
+
+    const prevBtn = card.querySelector(".face-prev-btn");
+    const nextBtn = card.querySelector(".face-next-btn");
+    if (prevBtn) prevBtn.classList.toggle("hidden", safeFace <= 1);
+    if (nextBtn) nextBtn.classList.toggle("hidden", safeFace >= 3);
+}
+
+function nextHostFace(hostName) {
+    const card = document.getElementById(`card-${hostName}`);
+    const current = Number(card?.dataset?.face || 1);
+    updateHostFace(hostName, current + 1);
+}
+
+function prevHostFace(hostName) {
+    const card = document.getElementById(`card-${hostName}`);
+    const current = Number(card?.dataset?.face || 1);
+    updateHostFace(hostName, current - 1);
+}
+
 function alertSeverityClass(severity) {
     const normalized = String(severity || "").toUpperCase();
     if (normalized === "HEALTHY") return "alert-sev-healthy";
@@ -2096,6 +2217,24 @@ function closeTrashModal() {
     modal.classList.add("hidden");
 }
 
+function openSidebarMenu() {
+    const menu = document.getElementById("sidebarMenu");
+    const overlay = document.getElementById("sidebarOverlay");
+    if (!menu || !overlay) return;
+    menu.classList.remove("hidden");
+    menu.setAttribute("aria-hidden", "false");
+    overlay.classList.remove("hidden");
+}
+
+function closeSidebarMenu() {
+    const menu = document.getElementById("sidebarMenu");
+    const overlay = document.getElementById("sidebarOverlay");
+    if (!menu || !overlay) return;
+    menu.classList.add("hidden");
+    menu.setAttribute("aria-hidden", "true");
+    overlay.classList.add("hidden");
+}
+
 async function restoreHost(hostId, hostName) {
     if (!confirm(`Restaurar o host \"${hostName}\" da lixeira?`)) return;
 
@@ -2143,6 +2282,7 @@ async function toggleAvailabilityChart(name) {
     if (!box) return;
 
     if (box.classList.contains("hidden")) {
+        closeHostExpandedPanels(name, box.id);
         box.classList.remove("hidden");
         await loadAvailability(name);
     } else {
@@ -2294,20 +2434,28 @@ async function loadDashboardSummary() {
 }
 
 function filterHosts() {
-    const searchTerm = document.getElementById("searchInput").value.toLowerCase();
-    const statusFilter = document.getElementById("statusFilter").value;
+    const searchInput = document.getElementById("searchInput");
+    const statusInput = document.getElementById("statusFilter");
+    if (!searchInput || !statusInput) return;
+
+    const searchTerm = String(searchInput.value || "").toLowerCase();
+    const statusFilter = String(statusInput.value || "all");
     const cards = document.querySelectorAll(".card");
 
     cards.forEach(card => {
-        const hostName = card.querySelector(".host-title").innerText.toLowerCase();
-        const hostAddr = card.querySelector(".host-addr").innerText.toLowerCase();
+        const hostTitleEl = card.querySelector(".host-title");
+        const hostAddrEl = card.querySelector(".host-addr");
         const indicator = card.querySelector(".status-indicator");
+        if (!hostTitleEl || !hostAddrEl || !indicator) return;
+
+        const hostName = hostTitleEl.innerText.toLowerCase();
+        const hostAddr = hostAddrEl.innerText.toLowerCase();
         
         const matchesSearch = hostName.includes(searchTerm) || hostAddr.includes(searchTerm);
         const matchesStatus = statusFilter === "all" || indicator.classList.contains(statusFilter);
 
         if (matchesSearch && matchesStatus) {
-            card.style.display = "block";
+            card.style.display = "";
         } else {
             card.style.display = "none";
         }
@@ -2346,6 +2494,18 @@ if (!isLoginPage) {
     if (importSelectedBtn) {
         importSelectedBtn.addEventListener("click", importSelectedLanHosts);
     }
+    const openMenuBtn = document.getElementById("openMenuBtn");
+    if (openMenuBtn) {
+        openMenuBtn.addEventListener("click", openSidebarMenu);
+    }
+    const closeMenuBtn = document.getElementById("closeMenuBtn");
+    if (closeMenuBtn) {
+        closeMenuBtn.addEventListener("click", closeSidebarMenu);
+    }
+    const sidebarOverlay = document.getElementById("sidebarOverlay");
+    if (sidebarOverlay) {
+        sidebarOverlay.addEventListener("click", closeSidebarMenu);
+    }
 
     document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
@@ -2362,29 +2522,37 @@ if (!isLoginPage) {
         document.addEventListener(eventName, touchUserInteraction, { passive: true });
     });
 
-    window.onload = async () => {
+    window.addEventListener("DOMContentLoaded", async () => {
         touchUserInteraction();
         await preloadDiscoverySubnet();
         renderDiscoveredLanHosts();
         await runTaskOnce("summary", loadDashboardSummary);
         await runTaskOnce("hosts-full", loadHosts);
         await runTaskOnce("trash", loadTrashHosts);
-        await runTaskOnce("timeline", loadTimeline);
         await runTaskOnce("alerts", checkAlerts);
         startDashboardPolling();
-    };
+    });
 }
 
-window.onclick = function(event) {
-        const editModal = document.getElementById("editModal");
-        const trashModal = document.getElementById("trashModal");
-        if (event.target === editModal) {
-            closeModal();
-        }
-        if (event.target === trashModal) {
-            closeTrashModal();
-        }
-    };
+window.addEventListener("click", (event) => {
+    const editModal = document.getElementById("editModal");
+    const trashModal = document.getElementById("trashModal");
+    const sidebarOverlay = document.getElementById("sidebarOverlay");
+    const changePwdModal = document.getElementById("changePwdModal");
+
+    if (event.target === editModal) closeModal();
+    if (event.target === trashModal) closeTrashModal();
+    if (event.target === sidebarOverlay) closeSidebarMenu();
+    if (event.target === changePwdModal) closeChangePwdModal();
+});
+
+window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    closeModal();
+    closeTrashModal();
+    closeSidebarMenu();
+    closeChangePwdModal();
+});
 
 const changePwdBtn = document.getElementById("changePasswordBtn");
 
@@ -2395,7 +2563,8 @@ if(changePwdBtn){
 }
 
 function closeChangePwdModal(){
-    document.getElementById("changePwdModal").classList.add("hidden");
+    const modal = document.getElementById("changePwdModal");
+    if (modal) modal.classList.add("hidden");
 }
 
 const logoutBtn = document.getElementById("logoutBtn");

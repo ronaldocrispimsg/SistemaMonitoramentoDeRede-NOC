@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOC Lite - Incidentes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="app-topbar">
+    <div class="app-topbar-inner">
+        <div class="hero-copy app-topbar-title">
+            <h1>Histórico de Incidentes</h1>
+        </div>
+        <a class="toolbar-link-btn icon-btn nav" href="dashboard.html" title="Voltar ao dashboard" aria-label="Voltar ao dashboard">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6M8 12h12"/></svg>
+        </a>
+    </div>
+</header>
+
+<div class="container app-content">
+
+    <section class="panel-section">
+        <article class="overview-card incidents-page-card">
+            <div class="incidents-toolbar">
+                <input id="incidentsSearch" type="text" placeholder="Buscar por nome do host...">
+            </div>
+            <div id="incidentsList" class="incidents-list" aria-live="polite">
+                <small>Carregando incidentes...</small>
+            </div>
+        </article>
+    </section>
+</div>
+<script src="incidents.js"></script>
+</body>
+</html>

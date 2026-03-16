@@ -5,6 +5,7 @@ import json
 import re
 import requests
 import dns.resolver
+from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from Backend.models import DNSCache
 
@@ -183,61 +184,66 @@ def tcp_check(ip: str, port: int, timeout: int = 5):
         except:
              pass
 
-def http_check(url: str, timeout=3):
-
+def _http_attempt(url: str, timeout=1):
     start = time.time()
-
     try:
         r = requests.get(
             url,
             timeout=timeout,
             allow_redirects=True,
-            headers={
-                "User-Agent": "NOC-Lite-Monitor"
-            }
+            headers={"User-Agent": "NOC-Lite-Monitor"}
         )
-
         latency = round((time.time() - start) * 1000, 2)
-
         status_code = r.status_code
-
-        if 200 <= status_code < 400:
-            success = True
-        elif 400 <= status_code < 500:
-            success = False
-        elif 500 <= status_code < 600:
-            success = False
-        else:
-            success = False
-
-
+        success = 200 <= status_code < 400
         return {
             "success": success,
             "latency": latency,
-            "status_code": r.status_code,
+            "status_code": status_code,
             "error": None
         }
-
     except requests.exceptions.Timeout:
-        return {
-            "success": False,
-            "latency": None,
-            "status_code": None,
-            "error": "timeout"
-        }
-
+        return {"success": False, "latency": None, "status_code": None, "error": "timeout"}
     except requests.exceptions.ConnectionError:
-        return {
-            "success": False,
-            "latency": None,
-            "status_code": None,
-            "error": "connection_error"
-        }
-
+        return {"success": False, "latency": None, "status_code": None, "error": "connection_error"}
     except Exception as e:
-        return {
-            "success": False,
-            "latency": None,
-            "status_code": None,
-            "error": str(e)
-        }
+        return {"success": False, "latency": None, "status_code": None, "error": str(e)}
+
+
+def _http_with_retries(url: str, retries: int = 3, timeout: int = 1):
+    last_result = None
+    for _ in range(max(1, retries)):
+        result = _http_attempt(url, timeout=timeout)
+        last_result = result
+        if result.get("success"):
+            return result
+    return last_result or {"success": False, "latency": None, "status_code": None, "error": "http_failed"}
+
+
+def http_check(url: str, timeout=1, retries=3):
+    parsed = urlparse(url if "://" in url else f"//{url}")
+    has_explicit_scheme = parsed.scheme in ("http", "https")
+
+    if has_explicit_scheme:
+        result = _http_with_retries(url, retries=retries, timeout=timeout)
+        result["protocol"] = parsed.scheme
+        result["http_latency"] = result.get("latency") if parsed.scheme == "http" and result.get("success") else None
+        result["https_latency"] = result.get("latency") if parsed.scheme == "https" and result.get("success") else None
+        return result
+
+    base = url.strip()
+    https_url = f"https://{base}"
+    http_url = f"http://{base}"
+
+    https_result = _http_with_retries(https_url, retries=retries, timeout=timeout)
+    if https_result.get("success"):
+        https_result["protocol"] = "https"
+        https_result["https_latency"] = https_result.get("latency")
+        https_result["http_latency"] = None
+        return https_result
+
+    http_result = _http_with_retries(http_url, retries=retries, timeout=timeout)
+    http_result["protocol"] = "http"
+    http_result["https_latency"] = https_result.get("latency") if https_result.get("success") else None
+    http_result["http_latency"] = http_result.get("latency") if http_result.get("success") else None
+    return http_result

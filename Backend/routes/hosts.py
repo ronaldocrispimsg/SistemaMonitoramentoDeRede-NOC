@@ -59,6 +59,24 @@ def _apply_snmp_policy(host: Host, snmp_enabled: bool) -> None:
     host.snmp_community = "noc-lite" if enabled else None
 
 
+def _apply_http_policy(host: Host, http_enabled: bool | None, selected_http: str | None) -> None:
+    if http_enabled is not None:
+        host.http_enabled = bool(http_enabled)
+
+    host.http_url = resolve_http_url(host.address, selected_http, host.port)
+
+    if not bool(getattr(host, "http_enabled", True)):
+        host.last_http_protocol = None
+        host.http_latency = None
+        host.https_latency = None
+        host.web_tcp_port = None
+        host.web_tcp_port_latency = None
+        host.tcp_http_port_ok = None
+        host.tcp_http_port_latency = None
+        host.tcp_https_port_ok = None
+        host.tcp_https_port_latency = None
+
+
 def _normalize_ports(raw_ports, fallback_port: int | None = None) -> list[int]:
     candidates = []
     if raw_ports:
@@ -358,6 +376,15 @@ def _reset_host_operational_state(host: Host) -> None:
     host.trend = "UNKNOWN"
     host.slope_http = None
     host.trend_http = "UNKNOWN"
+    host.last_http_protocol = None
+    host.http_latency = None
+    host.https_latency = None
+    host.web_tcp_port = None
+    host.web_tcp_port_latency = None
+    host.tcp_http_port_ok = None
+    host.tcp_http_port_latency = None
+    host.tcp_https_port_ok = None
+    host.tcp_https_port_latency = None
 
 
 def _deactivate_host_entity(host: Host) -> None:
@@ -456,8 +483,6 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
                 ports = existing_ports
             else:
                 ports = _normalize_ports(data.ports, data.port)
-            if not ports:
-                ports = [80, 443]
             existing_host.address = data.address
             _store_host_ports(existing_host, ports)
             existing_host.hostname_resolved = resolved
@@ -465,11 +490,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             existing_host.hostname_resolved = resolved
 
             selected_http = _resolve_http_input(data)
-            existing_host.http_url = resolve_http_url(
-                data.address,
-                selected_http,
-                (ports[0] if ports else None)
-            )
+            _apply_http_policy(existing_host, data.http_enabled, selected_http)
             _apply_snmp_policy(existing_host, data.snmp_enabled)
 
             db.commit()
@@ -482,8 +503,6 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
 
     else:
         ports = _normalize_ports(data.ports, data.port)
-        if not ports:
-            ports = [80, 443]
         selected_http = _resolve_http_input(data)
         host = Host(
             name=normalized_name,
@@ -495,17 +514,15 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             status="UNKNOWN",
             status_ping="UNKNOWN",
             status_tcp="UNKNOWN",
+            http_enabled=bool(data.http_enabled),
+            last_http_protocol=None,
             snmp_enabled=bool(data.snmp_enabled),
             snmp_community="noc-lite" if data.snmp_enabled else None,
             hostname_resolved=resolved,
         )
         _store_host_ports(host, ports)
 
-        host.http_url = resolve_http_url(
-            data.address,
-            selected_http,
-            (ports[0] if ports else None)
-        )
+        _apply_http_policy(host, data.http_enabled, selected_http)
 
         db.add(host)
         db.commit()
@@ -619,6 +636,8 @@ def network_import(
             status_ping="UNKNOWN",
             status_tcp="UNKNOWN",
             http_url=None,
+            http_enabled=False,
+            last_http_protocol=None,
             snmp_enabled=False,
             snmp_community=None,
         )
@@ -656,6 +675,7 @@ def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_us
     for h in hosts:
         h.ports = _host_ports(h)
         h.url = h.http_url
+        h.http_protocol = h.last_http_protocol
         h.availability_10m = availability_last_10_min(db, h.name)
         h.probable_cause = infer_probable_cause(db, h)
         h.icmp_blocked_but_service_up = bool(getattr(h, "icmp_blocked_but_service_up", False))
@@ -923,11 +943,7 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
     host.hostname_resolved = resolved
 
     selected_http = _resolve_http_input(data)
-    host.http_url = resolve_http_url(
-        data.address,
-        selected_http,
-        (ports[0] if ports else None)
-    )
+    _apply_http_policy(host, data.http_enabled, selected_http)
 
     if data.snmp_enabled is not None:
         _apply_snmp_policy(host, data.snmp_enabled)

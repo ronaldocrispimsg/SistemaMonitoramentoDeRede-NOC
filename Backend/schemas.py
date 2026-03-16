@@ -15,6 +15,7 @@ class HostUpdate(BaseModel):
     ports: Optional[List[int]] = None
     url: Optional[str] = None
     http_url: Optional[str] = None
+    http_enabled: Optional[bool] = None
     snmp_enabled: Optional[bool] = None
 
 class HostCreate(BaseModel):
@@ -24,6 +25,7 @@ class HostCreate(BaseModel):
     ports: Optional[List[int]] = None
     url: Optional[str] = None
     http_url: Optional[str] = None
+    http_enabled: bool = True
     snmp_enabled: bool = False
 
 

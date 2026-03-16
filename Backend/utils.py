@@ -1,4 +1,3 @@
-from urllib.parse import urlparse
 import socket
 import ipaddress
 from datetime import datetime
@@ -54,26 +53,19 @@ def normalize_http_url(url: str, port: int | None) -> str:
         return url
 
     url = url.strip()
-    parsed = urlparse(url)
-
-    if parsed.scheme in ("http", "https"):
+    if not url:
         return url
 
-    if "://" in url:
-        return url
-
-    if port == 443:
-        scheme = "https"
-    else:
-        scheme = "http"
-
-    return f"{scheme}://{url}"
+    # Mantém exatamente o valor informado quando houver conteúdo.
+    # A escolha/fallback de protocolo fica no checker (HTTPS -> HTTP).
+    return url
 
 
 def resolve_http_url(address: str, http_url: str | None, port: int | None) -> str | None:
     clean_http = (http_url or "").strip()
-    base = clean_http if clean_http else address
-    return normalize_http_url(base, port) if base else None
+    if not clean_http:
+        return None
+    return normalize_http_url(clean_http, port)
 
 
 def extract_ips_from_dns_result(dns_result) -> list[str]:

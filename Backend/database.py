@@ -158,6 +158,39 @@ def ensure_runtime_schema() -> None:
                                 """
                             )
                         )
+                    if "http_enabled" not in col_names:
+                        conn.execute(
+                            text(
+                                "ALTER TABLE hosts ADD COLUMN http_enabled BOOLEAN NOT NULL DEFAULT 1"
+                            )
+                        )
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE hosts
+                                SET http_enabled = 1
+                                WHERE trim(coalesce(http_url, '')) <> ''
+                                """
+                            )
+                        )
+                    if "last_http_protocol" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN last_http_protocol TEXT"))
+                    if "http_latency" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN http_latency FLOAT"))
+                    if "https_latency" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN https_latency FLOAT"))
+                    if "web_tcp_port" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN web_tcp_port INTEGER"))
+                    if "web_tcp_port_latency" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN web_tcp_port_latency FLOAT"))
+                    if "tcp_http_port_latency" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN tcp_http_port_latency FLOAT"))
+                    if "tcp_https_port_latency" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN tcp_https_port_latency FLOAT"))
+                    if "tcp_http_port_ok" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN tcp_http_port_ok BOOLEAN"))
+                    if "tcp_https_port_ok" not in col_names:
+                        conn.execute(text("ALTER TABLE hosts ADD COLUMN tcp_https_port_ok BOOLEAN"))
 
                     check_cols = conn.execute(text("PRAGMA table_info(checks)")).fetchall()
                     if check_cols:
