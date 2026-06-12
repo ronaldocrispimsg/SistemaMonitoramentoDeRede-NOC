@@ -1,0 +1,470 @@
+/* =========================
+BASE
+========================= */
+
+body{
+    font-family: Arial, sans-serif;
+    background:#f4f6f8;
+    margin:0;
+}
+
+/* =========================
+LOGIN
+========================= */
+
+.login-page{
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+.login-box{
+    width:320px;
+    background:white;
+    padding:30px;
+    border-radius:10px;
+    box-shadow:0 4px 15px rgba(0,0,0,0.08);
+    text-align:center;
+}
+
+.login-box h1{
+    margin-bottom:20px;
+}
+
+.login-box input{
+    width: 300px;
+    margin:8px 0;
+    padding:10px;
+    border-radius:6px;
+    border:1px solid #ccc;
+}
+
+.login-box button{
+    width: 320px;
+    margin-top:10px;
+    padding:10px;
+    border-radius:6px;
+    border:none;
+    background:#c9c9c9;
+    color:white;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.login-box button:hover{
+    background:#8d8d8d;
+}
+
+/* =========================
+LAYOUT DASHBOARD
+========================= */
+
+.container{
+    max-width:1200px;
+    margin:40px auto;
+    padding:0 20px;
+}
+
+.summary-grid{
+    display:grid;
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+    gap:10px;
+    margin-bottom:20px;
+}
+
+.summary-card{
+    background:#ffffff;
+    border:1px solid #dbe2ea;
+    border-radius:8px;
+    padding:10px 12px;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+}
+
+.summary-card small{
+    color:#64748b;
+}
+
+.summary-card strong{
+    color:#0f172a;
+}
+
+.summary-card-wide{
+    grid-column: span 2;
+}
+
+section{
+    margin-bottom:30px;
+}
+
+input{
+    padding:6px;
+    margin:4px;
+}
+
+button{
+    padding:6px 10px;
+    cursor:pointer;
+}
+
+/* =========================
+BOTÕES SUPERIORES
+========================= */
+
+.top-actions{
+    display:flex;
+    gap:10px;
+    margin-bottom:20px;
+}
+
+.top-actions button{
+    padding:8px 14px;
+    border:none;
+    border-radius:6px;
+    background:#c9c9c9;
+    color:white;
+    font-weight:bold;
+}
+
+.top-actions button:hover{
+    background:#8d8d8d;
+}
+
+/* =========================
+CARDS HOST
+========================= */
+
+.card{
+    transition:all 0.3s ease;
+    border:1px solid #ddd;
+    background:#fff;
+    padding:16px;
+    margin:10px 0;
+    border-radius:8px;
+    box-shadow:0 2px 4px rgba(0,0,0,0.05);
+}
+
+.card-critical{
+    animation: criticalBlink 1s infinite;
+}
+
+@keyframes criticalBlink{
+    0%{ box-shadow:0 2px 4px rgba(0,0,0,0.05); }
+    50%{ box-shadow:0 0 14px rgba(239,68,68,0.85); }
+    100%{ box-shadow:0 2px 4px rgba(0,0,0,0.05); }
+}
+
+.card-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:20px;
+}
+
+.host-main-info{
+    flex:1;
+    min-width:260px;
+}
+
+.metrics-section{
+    margin-top:12px;
+    padding-top:8px;
+    border-top:1px solid #e5e7eb;
+}
+
+.metrics-title{
+    font-weight:bold;
+    margin-bottom:6px;
+    color:#334155;
+}
+
+.snmp-section{
+    background:#f8fafc;
+    padding:10px;
+    border-radius:8px;
+    border:1px solid #e2e8f0;
+}
+
+.snmp-grid{
+    display:grid;
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+    gap:6px 14px;
+    margin-top:6px;
+}
+
+/* =========================
+STATUS
+========================= */
+
+.status-indicator{
+    display:inline-block;
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    margin-right:8px;
+}
+
+.bg-success{ background:#28a745; }
+.bg-danger{ background:#dc3545; }
+.bg-warning{ background:#ffc107; }
+.bg-secondary{ background:#6c757d; }
+
+/* =========================
+SEVERITY
+========================= */
+
+.severity-indicator{
+    display:inline-block;
+    font-weight:bold;
+    margin-left:5px;
+    font-size:14px;
+}
+
+.sev-healthy{ color:#2ecc71; }
+.sev-warning{ color:#f1c40f; }
+.sev-degraded{ color:#e67e22; }
+.sev-critical{ color:#e74c3c; }
+.sev-unknown{ color:#888; }
+
+/* =========================
+BOTÕES DOS CARDS
+========================= */
+
+.button-group{
+    display:grid;
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap:8px;
+    align-self:flex-start;
+}
+
+.button-group button{
+    width:100%;
+    padding:8px;
+    font-size:0.85em;
+    border-radius:6px;
+    border:1px solid #ccc;
+    background:#f8f9fa;
+}
+
+.button-group button:hover{
+    background:#e2e6ea;
+}
+
+/* =========================
+HISTÓRICO
+========================= */
+
+.history-box{
+    margin-top:8px;
+    font-size:0.85em;
+    background:#bbbbbb;
+    padding:6px;
+    border-radius:6px;
+}
+
+.history-line{
+    background:#0f172a;
+    color:#e5e7eb;
+    padding:6px 10px;
+    margin:4px 0;
+    border-radius:4px;
+}
+
+.line-success{ border-left:4px solid #22c55e; }
+.line-error{ border-left:4px solid #ef4444; }
+
+.type-badge{
+    color:#94a3b8;
+    font-weight:bold;
+}
+
+/* =========================
+ALERTAS
+========================= */
+
+#alert-container{
+    position:fixed;
+    bottom:20px;
+    right:20px;
+    width:320px;
+    z-index:9999;
+}
+
+.alert-card{
+    background:gray;
+    color:white;
+    padding:12px;
+    border-radius:8px;
+    margin-top:10px;
+    box-shadow:0 0 10px rgba(255,255,255,0.4);
+    animation:slideIn 0.3s ease-out;
+}
+
+.alert-up{ border-left:10px solid #28a745; }
+.alert-down{ border-left:10px solid #dc3545; }
+.alert-degraded{ border-left:10px solid #ffc107; }
+
+@keyframes slideIn{
+    from{ transform:translateX(40px); opacity:0; }
+    to{ transform:translateX(0); opacity:1; }
+}
+
+/* =========================
+MODAL
+========================= */
+
+.modal{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.35);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    z-index:9999;
+}
+
+.modal-content{
+    width:320px;
+    background:white;
+    padding:30px;
+    border-radius:10px;
+    box-shadow:0 4px 15px rgba(0,0,0,0.08);
+    text-align:center;
+}
+
+.modal-content input{
+    width: 300px;;
+    margin:8px 0;
+    padding:10px;
+    border-radius:6px;
+    border:1px solid #ccc;
+}
+
+.modal-actions button{
+    width: 320px;;
+    margin-top:10px;
+    padding:10px;
+    border-radius:6px;
+    border:none;
+    background:#c9c9c9;
+    color:white;
+    font-weight:bold;
+}
+
+.modal-actions button:hover{
+    background:#8d8d8d;
+}
+
+.hidden{
+    display:none !important;
+}
+
+/* =========================
+TIMELINE INCIDENTES
+========================= */
+
+.timeline-container{
+    margin-top:30px;
+    padding:20px;
+    background:#f8fafc;
+    border-radius:8px;
+    border:1px solid #e2e8f0;
+}
+
+.timeline-item{
+    padding:10px;
+    border-left:3px solid #cbd5e1;
+    margin-bottom:10px;
+    background:white;
+    border-radius:0 4px 4px 0;
+}
+
+.timeline-item.text-danger{ border-left-color:#ef4444; }
+.timeline-item.text-success{ border-left-color:#22c55e; }
+
+.text-danger{ color:#b91c1c; }
+.text-success{ color:#15803d; }
+
+/* =========================
+REMOVER SETAS NUMBER INPUT
+========================= */
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button{
+    -webkit-appearance:none;
+    margin:0;
+}
+
+input[type=number]{
+    -moz-appearance:textfield;
+    appearance:textfield;
+}
+
+.heatmap-box{
+    margin-top: 12px;
+    padding: 10px;
+    background: #f8fafc;
+    border: 1px solid #dbe2ea;
+    border-radius: 8px;
+}
+
+.heatmap-grid{
+    display: grid;
+    grid-template-columns: repeat(10, 18px);
+    gap: 4px;
+    margin-top: 10px;
+}
+
+.heat-cell{
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+}
+
+.heat-low{
+    background: #22c55e;
+}
+
+.heat-medium{
+    background: #facc15;
+}
+
+.heat-high{
+    background: #f97316;
+}
+
+.heat-fail{
+    background: #ef4444;
+}
+
+.metric-ok{
+    color:#15803d;
+    font-weight:bold;
+}
+
+.metric-warn{
+    color:#b45309;
+    font-weight:bold;
+}
+
+.metric-critical{
+    color:#b91c1c;
+    font-weight:bold;
+}
+
+.metric-neutral{
+    color:#475569;
+    font-weight:bold;
+}
+
+@media (max-width: 960px){
+    .summary-grid{
+        grid-template-columns: repeat(2, minmax(160px, 1fr));
+    }
+
+    .summary-card-wide{
+        grid-column: span 2;
+    }
+}
