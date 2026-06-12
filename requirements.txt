@@ -8,3 +8,5 @@ httpx>=0.28.1
 python-jose[cryptography]>=3.5.0
 requests>=2.32.5
 python-dotenv>=1.0.1
+psutil>=5.9.8
+pysnmp>=7.1.22

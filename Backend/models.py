@@ -11,10 +11,23 @@ class Host(Base):
     name = Column(String, unique=True, index=True)
     address = Column(String)
     port = Column(Integer, nullable=True)
+    tcp_ports = Column(String, nullable=True)
     http_url = Column(String, nullable=True)
+    http_enabled = Column(Boolean, default=True, nullable=False)
+    last_http_protocol = Column(String, nullable=True)
+    http_latency = Column(Float, nullable=True)
+    https_latency = Column(Float, nullable=True)
+    web_tcp_port = Column(Integer, nullable=True)
+    web_tcp_port_latency = Column(Float, nullable=True)
+    tcp_http_port_latency = Column(Float, nullable=True)
+    tcp_https_port_latency = Column(Float, nullable=True)
+    tcp_http_port_ok = Column(Boolean, nullable=True)
+    tcp_https_port_ok = Column(Boolean, nullable=True)
 
     active = Column(Boolean, default=True)
     active_time = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    baseline_pending = Column(Boolean, default=True, nullable=False)
 
     last_resolved_ip = Column(String, nullable=True)
     hostname_resolved = Column(String, nullable=True)
@@ -50,7 +63,8 @@ class Host(Base):
     last_net_in_octets = Column(Float, nullable=True)
     last_net_out_octets = Column(Float, nullable=True)
     last_net_check = Column(DateTime, nullable=True)
-    snmp_community = Column(String, default="public")
+    snmp_enabled = Column(Boolean, default=False, nullable=False)
+    snmp_community = Column(String, nullable=True, default=None)
     last_snmp_check = Column(DateTime, nullable=True)
 
     sla_rolling_ping = Column(Float, nullable=True)
@@ -83,6 +97,7 @@ class CheckResult(Base):
     latency = Column(Float, nullable=True)
     error = Column(String, nullable=True)
     status_code = Column(Integer, nullable=True)
+    tcp_port = Column(Integer, nullable=True)
     
     timestamp = Column(DateTime, default=datetime.utcnow)
 
