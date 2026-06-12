@@ -1,6 +1,14 @@
 from pydantic import BaseModel
 from typing import Optional
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class PasswordChangeRequest(BaseModel):
+    current_password: Optional[str] = None
+    new_password: str
+
 class HostUpdate(BaseModel):
     address: str
     port: Optional[int] = None

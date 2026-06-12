@@ -1,15 +1,26 @@
 from datetime import datetime, timedelta
 from Backend.models import CheckResult, Incident
-from Backend.utils import send_telegram_alert
 
 def compute_health(ping_result, tcp_result, http_result):
     score = 0
+    icmp_blocked_like = (
+        not ping_result["success"] and (
+            (tcp_result is not None and tcp_result.get("success")) or
+            (http_result is not None and http_result.get("success"))
+        )
+    )
+
+    ping_effective_success = ping_result["success"] or icmp_blocked_like
+    ping_effective_latency = ping_result.get("latency")
+    if ping_effective_latency is None and icmp_blocked_like:
+        # Não há RTT ICMP real quando firewall bloqueia; usa valor neutro para não penalizar saúde.
+        ping_effective_latency = 80
 
     # ---------- Ping ----------
-    if ping_result["success"]:
+    if ping_effective_success:
         score += 30
 
-        lat = ping_result.get("latency") or 9999
+        lat = ping_effective_latency or 9999
         if lat < 100:
             score += 15
         elif lat < 300:
@@ -18,9 +29,6 @@ def compute_health(ping_result, tcp_result, http_result):
     # ---------- TCP ----------
     if tcp_result and tcp_result["success"]:
         score += 30
-
-    elif not ping_result["success"] and tcp_result and tcp_result["success"]:
-        score += 30  # serviço responde mas ICMP bloqueado
 
     # ---------- HTTP ----------
     if http_result:
@@ -180,12 +188,22 @@ def calc_jitter_http(db, host_id, window=10):
 
     return round(sum(diffs) / len(diffs), 2)
 
-def refine_severity(base_severity, sla_ping=None, sla_tcp=None, sla_http=None, jitter_ping=None, jitter_tcp=None, jitter_http=None):
+def refine_severity(
+    base_severity,
+    sla_ping=None,
+    sla_tcp=None,
+    sla_http=None,
+    jitter_ping=None,
+    jitter_tcp=None,
+    jitter_http=None,
+    ignore_ping_metrics: bool = False
+):
     
     sev = base_severity
 
     # ---------- SLA pior manda ----------
-    slas = [s for s in (sla_ping, sla_tcp, sla_http) if s is not None]
+    sla_ping_effective = None if ignore_ping_metrics else sla_ping
+    slas = [s for s in (sla_ping_effective, sla_tcp, sla_http) if s is not None]
 
     if slas:
         worst_sla = min(slas)
@@ -196,7 +214,8 @@ def refine_severity(base_severity, sla_ping=None, sla_tcp=None, sla_http=None, j
             sev = "WARNING"
 
     # ---------- Jitter pior manda ----------
-    jitters = [j for j in (jitter_ping, jitter_tcp, jitter_http) if j is not None]
+    jitter_ping_effective = None if ignore_ping_metrics else jitter_ping
+    jitters = [j for j in (jitter_ping_effective, jitter_tcp, jitter_http) if j is not None]
 
     if jitters:
         worst_jitter = max(jitters)
@@ -360,7 +379,7 @@ def availability_last_10_min(db, host_name):
 
     return round(max(0, availability), 4)
 
-def apply_preventive_logic(host, snmp_data=None):
+def apply_preventive_logic(host, snmp_data=None, ignore_ping_metrics: bool = False):
     reasons = []
     preventive_severity = "HEALTHY"
 
@@ -373,8 +392,9 @@ def apply_preventive_logic(host, snmp_data=None):
         reasons.append("Serviço degradado")
 
     # ---------- SLA ----------
+    sla_ping = None if ignore_ping_metrics else host.sla_rolling_ping
     sla_values = [
-        host.sla_rolling_ping,
+        sla_ping,
         host.sla_rolling_tcp,
         host.sla_rolling_http
     ]
@@ -390,8 +410,9 @@ def apply_preventive_logic(host, snmp_data=None):
         reasons.append("SLA instável")
 
     # ---------- Jitter ----------
+    jitter_ping = None if ignore_ping_metrics else host.jitter_ms_ping
     jitter_values = [
-        host.jitter_ms_ping,
+        jitter_ping,
         host.jitter_ms_tcp,
         host.jitter_ms_http
     ]
@@ -407,7 +428,7 @@ def apply_preventive_logic(host, snmp_data=None):
         reasons.append("Jitter crítico")
 
     # ---------- Tendência ----------
-    if host.trend in ("SUBINDO", "PIORANDO", "UPWARD"):
+    if not ignore_ping_metrics and host.trend in ("SUBINDO", "PIORANDO", "UPWARD"):
         preventive_severity = max_severity(preventive_severity, "WARNING")
         reasons.append("Tendência de piora no ping")
 

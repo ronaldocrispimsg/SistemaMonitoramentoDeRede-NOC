@@ -42,11 +42,17 @@ def run_project():
 
 def create_default_admin():
     db = SessionLocal()
+    default_admin_password = os.getenv("NOC_DEFAULT_ADMIN_PASSWORD")
+
+    if not default_admin_password:
+        print("Banco de dados: NOC_DEFAULT_ADMIN_PASSWORD não configurada. Usuário admin padrão não será criado.")
+        db.close()
+        return
 
     if not db.query(User).filter(User.username == "admin").first():
         novo_admin = User(
             username="admin",
-            password_hash=hash_password("admin"),
+            password_hash=hash_password(default_admin_password),
             must_change_password=True
         )
         db.add(novo_admin)

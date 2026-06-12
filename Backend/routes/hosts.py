@@ -1,40 +1,55 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from Backend.database import SessionLocal, get_db
+from Backend.database import get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User, SNMPMetric
 from Backend.checker import ping_host, tcp_check, resolve_dns_cached
 from Backend.notifications import telegram_health_check
-from Backend.schemas import HostCreate, HostUpdate
-from Backend.utils import is_ip, normalize_http_url, reverse_dns
-from fastapi.security import OAuth2PasswordRequestForm
+from Backend.schemas import HostCreate, HostUpdate, LoginRequest, PasswordChangeRequest
+from Backend.utils import (
+    is_ip,
+    reverse_dns,
+    resolve_http_url,
+    extract_ips_from_dns_result,
+    get_last_check,
+    calculate_availability_points,
+    parse_incident_type,
+    strip_incident_prefix,
+)
 from Backend.dependencies import get_current_user
 from Backend.security import verify_password, create_access_token, hash_password
 
 router = APIRouter()
 
-def _resolve_http_url(address: str, http_url: str | None, port: int | None) -> str | None:
-    clean_http = (http_url or "").strip()
-    base = clean_http if clean_http else address
-    return normalize_http_url(base, port) if base else None
+def _is_icmp_blocked_but_service_up(
+    host: Host,
+    last_ping: CheckResult | None,
+    last_tcp: CheckResult | None,
+    last_http: CheckResult | None,
+) -> bool:
+    if not last_ping or last_ping.success:
+        return False
 
-def _last_check(db: Session, host_id: int, check_type: str) -> CheckResult | None:
-    return (
-        db.query(CheckResult)
-        .filter(
-            CheckResult.host_id == host_id,
-            CheckResult.check_type == check_type
-        )
-        .order_by(CheckResult.timestamp.desc())
-        .first()
-    )
+    tcp_ok = host.port is not None and bool(last_tcp and last_tcp.success)
+    http_ok = bool(last_http and last_http.success)
+    return tcp_ok or http_ok
 
 def infer_probable_cause(db: Session, host: Host) -> str:
-    last_dns = _last_check(db, host.id, "dns")
-    last_ping = _last_check(db, host.id, "ping")
-    last_tcp = _last_check(db, host.id, "tcp")
-    last_http = _last_check(db, host.id, "http")
+    last_dns = get_last_check(db, host.id, "dns")
+    last_ping = get_last_check(db, host.id, "ping")
+    last_tcp = get_last_check(db, host.id, "tcp")
+    last_http = get_last_check(db, host.id, "http")
+    icmp_blocked_but_service_up = _is_icmp_blocked_but_service_up(
+        host,
+        last_ping,
+        last_tcp,
+        last_http,
+    )
+    host.icmp_blocked_but_service_up = icmp_blocked_but_service_up
+
+    if icmp_blocked_but_service_up:
+        return "ICMP bloqueado por firewall\nServiço operando normalmente"
 
     if host.status == "DOWN":
         if last_dns and not last_dns.success:
@@ -77,7 +92,8 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
     if is_ip(data.address):
         resolved = reverse_dns(data.address)
     else:
-        ips = resolve_dns_cached(data.address, db)  # Verifica se o endereço é válido       
+        dns_result = resolve_dns_cached(data.address, db)  # Verifica se o endereço é válido
+        ips = extract_ips_from_dns_result(dns_result)
         
         if not ips:
             raise HTTPException(status_code=400, detail="Endereço inválido")
@@ -92,7 +108,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             existing_host.port = data.port
             existing_host.hostname_resolved = resolved
 
-            existing_host.http_url = _resolve_http_url(
+            existing_host.http_url = resolve_http_url(
                 data.address,
                 data.http_url,
                 data.port or existing_host.port
@@ -112,7 +128,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             hostname_resolved=resolved,
         )
 
-        host.http_url = _resolve_http_url(
+        host.http_url = resolve_http_url(
             data.address,
             data.http_url,
             data.port or host.port
@@ -129,24 +145,33 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
 @router.get("/hosts/list")
 def list_hosts(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     hosts = db.query(Host).filter(Host.active == True).all()
+    open_incident_hosts = {
+        row[0]
+        for row in db.query(Incident.host_name)
+        .filter(Incident.status == "OPEN")
+        .all()
+    }
     
     # Métricas em tempo real no objeto antes de enviar
     for h in hosts:
         h.availability_10m = availability_last_10_min(db, h.name)
         h.probable_cause = infer_probable_cause(db, h)
+        h.icmp_blocked_but_service_up = bool(getattr(h, "icmp_blocked_but_service_up", False))
+        h.has_open_incident = h.name in open_incident_hosts
         
     return hosts
 
 
 @router.post("/host/check/{host_name}")
-def check_host(host_name: str, db: Session = Depends(get_db)):
+def check_host(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
 
     host = db.query(Host).filter(Host.name == host_name).first()
 
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
 
-    ips = resolve_dns_cached(host.address, db)
+    dns_result = resolve_dns_cached(host.address, db)
+    ips = extract_ips_from_dns_result(dns_result)
 
     if not ips:
         raise HTTPException(400, "DNS fail")
@@ -158,6 +183,12 @@ def check_host(host_name: str, db: Session = Depends(get_db)):
 
     if host.port is not None:
         tcp_result = tcp_check(ip, host.port)
+
+    icmp_blocked_but_service_up = (
+        not ping_result["success"] and
+        tcp_result is not None and
+        tcp_result.get("success")
+    )
 
     host.status_ping = "UP" if ping_result["success"] else "DOWN"
     host.latency_ping = ping_result["latency"]
@@ -171,7 +202,10 @@ def check_host(host_name: str, db: Session = Depends(get_db)):
 
     host.last_check = datetime.now()
 
-    if host.status_ping == "DOWN":
+    if icmp_blocked_but_service_up:
+        host.status = "UP"
+
+    elif host.status_ping == "DOWN":
         host.status = "DOWN"
 
     elif host.status_tcp == "DOWN":
@@ -186,6 +220,7 @@ def check_host(host_name: str, db: Session = Depends(get_db)):
     "host": host.name,
     "address": host.address,
     "status": host.status,
+    "icmp_blocked_but_service_up": icmp_blocked_but_service_up,
     "ping": {
         "status": host.status_ping,
         "latency": host.latency_ping
@@ -198,7 +233,7 @@ def check_host(host_name: str, db: Session = Depends(get_db)):
 }
 
 @router.get("/host/history/{host_name}")
-def host_history(host_name: str, db: Session = Depends(get_db)):
+def host_history(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     host = db.query(Host).filter(Host.name == host_name).first()
 
     if not host:
@@ -252,7 +287,8 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
     if is_ip(data.address):
         resolved = reverse_dns(data.address)
     else:
-        ips = resolve_dns_cached(data.address, db)
+        dns_result = resolve_dns_cached(data.address, db)
+        ips = extract_ips_from_dns_result(dns_result)
 
         if not ips:
             raise HTTPException(status_code=400, detail="Endereço inválido. ")
@@ -261,7 +297,7 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
     host.port = data.port
     host.hostname_resolved = resolved
 
-    host.http_url = _resolve_http_url(
+    host.http_url = resolve_http_url(
         data.address,
         data.http_url,
         data.port or host.port
@@ -272,9 +308,9 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
     return {"detail": "Host atualizado com sucesso"}
 
 @router.get("/alerts/list")
-def list_alerts(db: Session = Depends(get_db)):
+def list_alerts(db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     rows = (
-        db.query(Alert, Host.name)
+        db.query(Alert, Host)
         .join(Host, Host.id == Alert.host_id)
         .order_by(Alert.timestamp.desc())
         .limit(50)
@@ -282,19 +318,47 @@ def list_alerts(db: Session = Depends(get_db)):
     )
 
     result = []
-    for alert, host_name in rows:
+    for alert, host in rows:
+        availability_10m = availability_last_10_min(db, host.name)
+        probable_cause = infer_probable_cause(db, host)
+        icmp_blocked_but_service_up = bool(getattr(host, "icmp_blocked_but_service_up", False))
+
         result.append({
             "host_id": alert.host_id,
-            "host_name": host_name,
+            "host_name": host.name,
+            "host_address": host.address,
+            "host_port": host.port,
+            "alert_type": alert.alert_type,
             "old_status": alert.old_status,
             "new_status": alert.new_status,
-            "timestamp": alert.timestamp.isoformat()
+            "timestamp": alert.timestamp.isoformat(),
+            "status": host.status,
+            "severity": host.severity,
+            "health_score": host.health_score,
+            "availability_10m": availability_10m,
+            "sla_rolling_ping": host.sla_rolling_ping,
+            "sla_rolling_tcp": host.sla_rolling_tcp,
+            "sla_rolling_http": host.sla_rolling_http,
+            "jitter_ms_ping": host.jitter_ms_ping,
+            "jitter_ms_tcp": host.jitter_ms_tcp,
+            "jitter_ms_http": host.jitter_ms_http,
+            "trend_http": host.trend_http,
+            "cpu_usage": host.cpu_usage,
+            "ram_usage": host.ram_usage,
+            "disk_usage": host.disk_usage,
+            "network_traffic": host.network_traffic,
+            "network_in_bps": host.network_in_bps,
+            "network_out_bps": host.network_out_bps,
+            "last_check": host.last_check.isoformat() if host.last_check else None,
+            "last_snmp_check": host.last_snmp_check.isoformat() if host.last_snmp_check else None,
+            "probable_cause": probable_cause,
+            "icmp_blocked_but_service_up": icmp_blocked_but_service_up,
         })
 
     return result
 
 @router.get("/hosts/metrics/{host_name}")
-def host_metrics(host_name: str, db: Session = Depends(get_db)):
+def host_metrics(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return {
         "total_incidents": total_incidents(db, host_name),
         "total_downtime_seconds": total_downtime(db, host_name),
@@ -302,55 +366,20 @@ def host_metrics(host_name: str, db: Session = Depends(get_db)):
     }
 
 @router.get("/hosts/metrics/availability/type/{host_name}")
-def availability_type(host_name: str, db: Session = Depends(get_db)):
+def availability_type(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
 
     host = db.query(Host).filter_by(name=host_name).first()
     if not host:
         return {"ping": [], "tcp": [], "http": []}
 
-    window = 100
-
-    def calc_availability(check_type: str):
-
-        rows = (
-            db.query(CheckResult)
-            .filter(
-                CheckResult.host_id == host.id,
-                CheckResult.check_type == check_type
-            )
-            .order_by(CheckResult.timestamp.desc())
-            .limit(200)
-            .all()
-        )
-        rows.reverse()
-
-        points = []
-        total = len(rows)
-        if total == 0:
-            return points
-        
-        for i in range(1, total + 1):
-            start_index = max(0, i - window)
-            chunk = rows[start_index:i]
-
-            ok = sum(1 for r in chunk if r.success)
-            availability = (ok / len(chunk)) * 100
-
-            points.append({
-                "timestamp": chunk[-1].timestamp.isoformat(),
-                "availability": round(availability, 2)
-            })
-
-        return points
-
     return {
-        "ping": calc_availability("ping"),
-        "tcp": calc_availability("tcp"),
-        "http": calc_availability("http")
+        "ping": calculate_availability_points(db, host.id, "ping"),
+        "tcp": calculate_availability_points(db, host.id, "tcp"),
+        "http": calculate_availability_points(db, host.id, "http")
     }
     
 @router.get("/hosts/metrics/availability/host/{host_name}")
-def availability_host(host_name: str, db: Session = Depends(get_db)):
+def availability_host(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = datetime.utcnow()
     points = []
 
@@ -388,7 +417,7 @@ def availability_host(host_name: str, db: Session = Depends(get_db)):
     return list(reversed(points))
 
 @router.get("/hosts/metrics/{host_name}/downtime")
-def downtime_history(host_name: str, db: Session = Depends(get_db)):
+def downtime_history(host_name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = datetime.utcnow()
     since = now - timedelta(hours=1)
 
@@ -411,11 +440,35 @@ def downtime_history(host_name: str, db: Session = Depends(get_db)):
     ]
 
 @router.post("/auth/login")
-def login(data: dict, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == data["username"]).first()
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    username = data.username.strip()
+    password = data.password
+    user = db.query(User).filter(User.username == username).first()
 
-    if not user or not verify_password(data["password"], user.password_hash):
+    if user and user.locked:
+        if user.locked_until and user.locked_until <= datetime.now():
+            user.locked = False
+            user.locked_until = None
+            user.attempts = 0
+            db.commit()
+        else:
+            raise HTTPException(status_code=403, detail="Conta bloqueada. Tente novamente mais tarde.")
+
+    if not user or not verify_password(password, user.password_hash):
+        if user:
+            user.attempts = (user.attempts or 0) + 1
+            if user.attempts >= 5:
+                user.locked = True
+                user.locked_until = datetime.now() + timedelta(minutes=1)
+                db.commit()
+                raise HTTPException(status_code=403, detail="Conta bloqueada após 5 tentativas. Aguarde 1 minuto.")
+            db.commit()
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    user.attempts = 0
+    user.locked = False
+    user.locked_until = None
+    db.commit()
 
     # Aqui geramos o token JWT
     token = create_access_token({"sub": user.username})
@@ -427,12 +480,12 @@ def login(data: dict, db: Session = Depends(get_db)):
     }
 
 @router.post("/auth/first-password")
-def first_change_password(data: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def first_change_password(data: PasswordChangeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
 
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-    user.password_hash = hash_password(data["new_password"])
+    user.password_hash = hash_password(data.new_password)
     user.must_change_password = False
     user.attempts = 0
 
@@ -443,7 +496,7 @@ def first_change_password(data: dict, user: User = Depends(get_current_user), db
     }
 
 @router.post("/auth/change-password")
-def change_password(data: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def change_password(data: PasswordChangeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
 
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -453,7 +506,10 @@ def change_password(data: dict, user: User = Depends(get_current_user), db: Sess
         raise HTTPException(status_code=403, detail="Conta bloqueada por muitas tentativas")
 
     # Verifica senha atual
-    if not verify_password(data["current_password"], user.password_hash):
+    if not data.current_password:
+        raise HTTPException(status_code=400, detail="Senha atual é obrigatória")
+
+    if not verify_password(data.current_password, user.password_hash):
 
         user.attempts += 1
 
@@ -471,7 +527,7 @@ def change_password(data: dict, user: User = Depends(get_current_user), db: Sess
 
     # Senha correta → reseta tentativas
     user.attempts = 0
-    user.password_hash = hash_password(data["new_password"])
+    user.password_hash = hash_password(data.new_password)
     user.must_change_password = False
 
     db.commit()
@@ -493,79 +549,14 @@ def get_latest_incidents(db: Session = Depends(get_db), user: str = Depends(get_
             "host_name": i.host_name,
             "status": i.status,
             "reason": i.reason,
+            "incident_type": parse_incident_type(i.reason),
+            "reason_text": strip_incident_prefix(i.reason),
             "started_time": i.started_time.isoformat(),
             "ended_time": i.ended_time.isoformat() if i.ended_time else None,
             "duration": i.duration_seconds
         }
         for i in incidents
     ]
-
-@router.get("/metrics/heatmap/{host_id}")
-def get_heatmap(host_id: int, db: Session = Depends(get_db)):
-    host = db.query(Host).filter(Host.id == host_id).first()
-
-    if not host:
-        raise HTTPException(status_code=404, detail="Host não encontrado")
-
-    # Escolhe o tipo mais "saudável" recentemente:
-    # maior taxa de sucesso e, em empate, menor latência média.
-    candidates = []
-    for check_type in ("ping", "tcp", "http"):
-        rows = (
-            db.query(CheckResult)
-            .filter(
-                CheckResult.host_id == host.id,
-                CheckResult.check_type == check_type
-            )
-            .order_by(CheckResult.timestamp.desc())
-            .limit(30)
-            .all()
-        )
-
-        if not rows:
-            continue
-
-        total = len(rows)
-        successes = sum(1 for r in rows if r.success)
-        success_rate = successes / total
-
-        latencies = [r.latency for r in rows if r.latency is not None]
-        avg_latency = sum(latencies) / len(latencies) if latencies else float("inf")
-
-        candidates.append((check_type, success_rate, avg_latency))
-
-    if candidates:
-        preferred_type = max(candidates, key=lambda item: (item[1], -item[2]))[0]
-    else:
-        preferred_type = "ping"
-
-    results = (
-        db.query(CheckResult)
-        .filter(
-            CheckResult.host_id == host.id,
-            CheckResult.check_type == preferred_type
-        )
-        .order_by(CheckResult.timestamp.desc())
-        .limit(100)
-        .all()
-    )
-
-    data = []
-    for r in results:
-        data.append({
-            "check_type": r.check_type,
-            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
-            "latency": r.latency,
-            "success": r.success,
-            "error": r.error
-        })
-
-    return {
-        "host_id": host.id,
-        "host": host.name,
-        "check_type": preferred_type,
-        "data": data
-    }
 
 @router.get("/metrics/snmp/{host_name}")
 def get_snmp_history(host_name: str, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
@@ -607,48 +598,27 @@ def dashboard_summary(db: Session = Depends(get_db), user: str = Depends(get_cur
     up = sum(1 for h in hosts if h.status == "UP")
     degraded = sum(1 for h in hosts if h.status == "DEGRADED")
     down = sum(1 for h in hosts if h.status == "DOWN")
-    critical = sum(1 for h in hosts if h.severity == "CRITICAL")
 
     open_incidents = (
         db.query(Incident)
         .filter(Incident.status == "OPEN")
         .count()
     )
-
-    health_values = [h.health_score for h in hosts if h.health_score is not None]
-    avg_health = round(sum(health_values) / len(health_values), 2) if health_values else None
-
-    worst_latency_host = None
-    latency_hosts = [h for h in hosts if h.latency_ping is not None]
-    if latency_hosts:
-        worst = max(latency_hosts, key=lambda h: h.latency_ping or 0)
-        worst_latency_host = {"host": worst.name, "value_ms": round(worst.latency_ping, 2)}
-
-    top_cpu_host = None
-    cpu_hosts = [h for h in hosts if h.cpu_usage is not None]
-    if cpu_hosts:
-        top_cpu = max(cpu_hosts, key=lambda h: h.cpu_usage or 0)
-        top_cpu_host = {"host": top_cpu.name, "value": round(top_cpu.cpu_usage, 2)}
-
-    top_ram_host = None
-    ram_hosts = [h for h in hosts if h.ram_usage is not None]
-    if ram_hosts:
-        top_ram = max(ram_hosts, key=lambda h: h.ram_usage or 0)
-        top_ram_host = {"host": top_ram.name, "value": round(top_ram.ram_usage, 2)}
+    closed_incidents = (
+        db.query(Incident)
+        .filter(Incident.status == "CLOSED")
+        .count()
+    )
 
     return {
         "total_hosts": total_hosts,
         "up": up,
         "degraded": degraded,
         "down": down,
-        "critical_hosts": critical,
         "open_incidents": open_incidents,
-        "average_health": avg_health,
-        "worst_latency_host": worst_latency_host,
-        "top_cpu_host": top_cpu_host,
-        "top_ram_host": top_ram_host
+        "closed_incidents": closed_incidents
     }
 
 @router.get("/health/telegram")
-def check_telegram():
+def check_telegram(user: User = Depends(get_current_user)):
     return telegram_health_check()
