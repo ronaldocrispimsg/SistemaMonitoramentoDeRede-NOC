@@ -4,6 +4,8 @@ const MAX_POINTS_PER_SERIES = 100;
 let authRedirectScheduled = false;
 let lastUserInteractionAt = 0;
 
+//
+
 const POLLING_INTERVALS = {
     visible: { lightMs: 5000, heavyMs: 20000 },
     hidden: { lightMs: 30000, heavyMs: 120000 }
