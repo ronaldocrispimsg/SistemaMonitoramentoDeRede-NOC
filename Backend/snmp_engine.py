@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import asyncio
+from sqlalchemy import select
 
 from pysnmp.hlapi.v3arch.asyncio import (
     SnmpEngine,
@@ -96,39 +97,35 @@ def register_snmp_failure(host_id, host_name):
     print(f"[SNMP BACKOFF] {host_name}: pausado por {wait_seconds}s")
 
 
-def get_snmp_value(ip, community, oid):
-    async def _fetch():
-        snmp_engine = SnmpEngine()
-        try:
-            error_indication, error_status, error_index, var_binds = await get_cmd(
-                snmp_engine,
-                CommunityData(community, mpModel=1),
-                await UdpTransportTarget.create(
-                    (ip, 161),
-                    timeout=SNMP_TIMEOUT_SECONDS,
-                    retries=SNMP_RETRIES,
-                ),
-                ContextData(),
-                ObjectType(ObjectIdentity(oid)),
-            )
-
-            if error_indication:
-                print(f"Erro SNMP em {ip}: {error_indication}")
-                return None
-
-            if error_status:
-                print(f"Erro SNMP em {ip}: {error_status.prettyPrint()} no índice {error_index}")
-                return None
-
-            return var_binds[0][1]
-        finally:
-            snmp_engine.close_dispatcher()
-
+async def get_snmp_value(ip, community, oid):
+    snmp_engine = SnmpEngine()
     try:
-        return asyncio.run(_fetch())
+        error_indication, error_status, error_index, var_binds = await get_cmd(
+            snmp_engine,
+            CommunityData(community, mpModel=1),
+            await UdpTransportTarget.create(
+                (ip, 161),
+                timeout=SNMP_TIMEOUT_SECONDS,
+                retries=SNMP_RETRIES,
+            ),
+            ContextData(),
+            ObjectType(ObjectIdentity(oid)),
+        )
+
+        if error_indication:
+            print(f"Erro SNMP em {ip}: {error_indication}")
+            return None
+
+        if error_status:
+            print(f"Erro SNMP em {ip}: {error_status.prettyPrint()} no índice {error_index}")
+            return None
+
+        return var_binds[0][1]
     except Exception as e:
         print(f"Erro SNMP em {ip}: {e}")
         return None
+    finally:
+        snmp_engine.close_dispatcher()
 
 
 async def walk_snmp(ip, community, oid):
@@ -185,25 +182,22 @@ async def walk_snmp(ip, community, oid):
     return results
 
 
-def get_storage_index(ip, community, mount_point="/"):
-    async def _fetch():
+async def get_storage_index(ip, community, mount_point="/"):
+    try:
         rows = await walk_snmp(ip, community, "1.3.6.1.2.1.25.2.3.1.3")
         for oid, value in rows:
             if value.strip('"') == mount_point:
                 return oid.split(".")[-1]
         return None
-
-    try:
-        return asyncio.run(_fetch())
     except Exception as e:
         print(f"Erro ao descobrir storage index em {ip}: {e}")
         return None
 
 
-def get_best_interface_index(ip, community):
+async def get_best_interface_index(ip, community):
     preferred = ("enp", "eth", "ens", "wlp", "wlan")
 
-    async def _fetch():
+    try:
         rows = await walk_snmp(ip, community, "1.3.6.1.2.1.31.1.1.1.1")
         candidates = []
 
@@ -222,9 +216,6 @@ def get_best_interface_index(ip, community):
                     return idx
 
         return candidates[0][0] if candidates else None
-
-    try:
-        return asyncio.run(_fetch())
     except Exception as e:
         print(f"Erro ao descobrir interface index em {ip}: {e}")
         return None
@@ -239,17 +230,17 @@ def _to_float(value):
         return None
 
 
-def _read_interface_octets_64(ip, community, iface_index):
-    in_64 = _to_float(get_snmp_value(ip, community, f"1.3.6.1.2.1.31.1.1.1.6.{iface_index}"))
-    out_64 = _to_float(get_snmp_value(ip, community, f"1.3.6.1.2.1.31.1.1.1.10.{iface_index}"))
+async def _read_interface_octets_64(ip, community, iface_index):
+    in_64 = _to_float(await get_snmp_value(ip, community, f"1.3.6.1.2.1.31.1.1.1.6.{iface_index}"))
+    out_64 = _to_float(await get_snmp_value(ip, community, f"1.3.6.1.2.1.31.1.1.1.10.{iface_index}"))
     if in_64 is not None and out_64 is not None:
         return in_64, out_64
     return None, None
 
 
-def _read_interface_octets_32(ip, community, iface_index):
-    in_32 = _to_float(get_snmp_value(ip, community, f"1.3.6.1.2.1.2.2.1.10.{iface_index}"))
-    out_32 = _to_float(get_snmp_value(ip, community, f"1.3.6.1.2.1.2.2.1.16.{iface_index}"))
+async def _read_interface_octets_32(ip, community, iface_index):
+    in_32 = _to_float(await get_snmp_value(ip, community, f"1.3.6.1.2.1.2.2.1.10.{iface_index}"))
+    out_32 = _to_float(await get_snmp_value(ip, community, f"1.3.6.1.2.1.2.2.1.16.{iface_index}"))
     if in_32 is not None and out_32 is not None:
         return in_32, out_32
     return None, None
@@ -275,7 +266,7 @@ def _reset_network_baseline(host):
     host.network_traffic = None
 
 
-def _select_interface_octets(host, ip, community, iface_index):
+async def _select_interface_octets(host, ip, community, iface_index):
     state = _get_net_counter_state(host.id)
 
     if state["iface_index"] != iface_index:
@@ -289,7 +280,7 @@ def _select_interface_octets(host, ip, community, iface_index):
 
     # Modo inicial: tenta 64-bit, depois 32-bit.
     if mode is None:
-        in_64, out_64 = _read_interface_octets_64(ip, community, iface_index)
+        in_64, out_64 = await _read_interface_octets_64(ip, community, iface_index)
         if in_64 is not None and out_64 is not None:
             state["counter_mode"] = "64"
             state["counter64_failures"] = 0
@@ -297,7 +288,7 @@ def _select_interface_octets(host, ip, community, iface_index):
             _reset_network_baseline(host)
             return in_64, out_64, 64, True
 
-        in_32, out_32 = _read_interface_octets_32(ip, community, iface_index)
+        in_32, out_32 = await _read_interface_octets_32(ip, community, iface_index)
         if in_32 is not None and out_32 is not None:
             state["counter_mode"] = "32"
             state["counter64_failures"] = 0
@@ -309,7 +300,7 @@ def _select_interface_octets(host, ip, community, iface_index):
 
     # Modo preferencial 64-bit.
     if mode == "64":
-        in_64, out_64 = _read_interface_octets_64(ip, community, iface_index)
+        in_64, out_64 = await _read_interface_octets_64(ip, community, iface_index)
         if in_64 is not None and out_64 is not None:
             state["counter64_failures"] = 0
             return in_64, out_64, 64, False
@@ -318,7 +309,7 @@ def _select_interface_octets(host, ip, community, iface_index):
         if state["counter64_failures"] < COUNTER64_FAILOVER_THRESHOLD:
             return None, None, None, False
 
-        in_32, out_32 = _read_interface_octets_32(ip, community, iface_index)
+        in_32, out_32 = await _read_interface_octets_32(ip, community, iface_index)
         if in_32 is not None and out_32 is not None:
             state["counter_mode"] = "32"
             state["counter64_failures"] = 0
@@ -331,7 +322,7 @@ def _select_interface_octets(host, ip, community, iface_index):
     # Modo 32-bit: mantém coleta e revalida 64-bit a cada N coletas.
     probe_counter = int(state.get("collections_since_last_64_probe", 0) or 0)
     if probe_counter >= COUNTER64_REPROBE_INTERVAL:
-        in_64, out_64 = _read_interface_octets_64(ip, community, iface_index)
+        in_64, out_64 = await _read_interface_octets_64(ip, community, iface_index)
         state["collections_since_last_64_probe"] = 0
         if in_64 is not None and out_64 is not None:
             state["counter_mode"] = "64"
@@ -339,7 +330,7 @@ def _select_interface_octets(host, ip, community, iface_index):
             _reset_network_baseline(host)
             return in_64, out_64, 64, True
 
-    in_32, out_32 = _read_interface_octets_32(ip, community, iface_index)
+    in_32, out_32 = await _read_interface_octets_32(ip, community, iface_index)
     state["collections_since_last_64_probe"] = int(state.get("collections_since_last_64_probe", 0) or 0) + 1
     if in_32 is not None and out_32 is not None:
         return in_32, out_32, 32, False
@@ -362,20 +353,21 @@ def _compute_delta_octets(current, previous, counter_bits):
     return max(current - previous, 0)
 
 
-def trim_snmp_history(db, host_id, limit=500):
-    old_rows = (
-        db.query(SNMPMetric)
+async def trim_snmp_history(db, host_id, limit=500):
+    stmt = (
+        select(SNMPMetric)
         .filter(SNMPMetric.host_id == host_id)
         .order_by(SNMPMetric.timestamp.desc())
         .offset(limit)
-        .all()
     )
+    res = await db.execute(stmt)
+    old_rows = res.scalars().all()
 
     for row in old_rows:
-        db.delete(row)
+        await db.delete(row)
 
 
-def update_host_snmp(host, db):
+async def update_host_snmp(host, db):
     data = {
         "cpu": None,
         "ram": None,
@@ -387,16 +379,16 @@ def update_host_snmp(host, db):
     ip = host.address
 
     # CPU % real -> 100 - idle
-    cpu_idle = get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.11.11.0")
+    cpu_idle = await get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.11.11.0")
     if cpu_idle is not None:
         idle = float(cpu_idle)
         data["cpu"] = round(100 - idle, 2)
         host.cpu_usage = data["cpu"]
 
-    ram_total = get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.5.0")
-    ram_free = get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.6.0")
-    ram_buffer = get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.14.0")
-    ram_cache = get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.15.0")
+    ram_total = await get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.5.0")
+    ram_free = await get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.6.0")
+    ram_buffer = await get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.14.0")
+    ram_cache = await get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.15.0")
 
     if (
         ram_total is not None and
@@ -419,10 +411,10 @@ def update_host_snmp(host, db):
             host.ram_usage = data["ram"]
 
     # Disco dinâmico -> procura "/"
-    storage_index = get_storage_index(ip, comm, "/")
+    storage_index = await get_storage_index(ip, comm, "/")
     if storage_index:
-        disk_total = get_snmp_value(ip, comm, f"1.3.6.1.2.1.25.2.3.1.5.{storage_index}")
-        disk_used = get_snmp_value(ip, comm, f"1.3.6.1.2.1.25.2.3.1.6.{storage_index}")
+        disk_total = await get_snmp_value(ip, comm, f"1.3.6.1.2.1.25.2.3.1.5.{storage_index}")
+        disk_used = await get_snmp_value(ip, comm, f"1.3.6.1.2.1.25.2.3.1.6.{storage_index}")
 
         if disk_total is not None and disk_used is not None:
             total = float(disk_total)
@@ -434,11 +426,11 @@ def update_host_snmp(host, db):
                 host.disk_remaining = round(100 - data["disk"], 2)
 
     # Rede dinâmica -> melhor interface não-loopback
-    iface_index = get_best_interface_index(ip, comm)
+    iface_index = await get_best_interface_index(ip, comm)
     now = datetime.utcnow()
 
     if iface_index:
-        current_in, current_out, counter_bits, baseline_only = _select_interface_octets(
+        current_in, current_out, counter_bits, baseline_only = await _select_interface_octets(
             host,
             ip,
             comm,
@@ -505,7 +497,7 @@ def update_host_snmp(host, db):
     )
     db.add(metric)
 
-    trim_snmp_history(db, host.id, limit=500)
+    await trim_snmp_history(db, host.id, limit=500)
 
-    db.flush()
+    await db.flush()
     return data

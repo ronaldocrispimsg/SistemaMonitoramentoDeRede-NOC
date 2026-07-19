@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from sqlalchemy import select
 from Backend.models import CheckResult, Incident
 
 def compute_health(ping_result, tcp_result, http_result):
@@ -530,3 +531,181 @@ def max_severity(current, new):
         "CRITICAL": 3
     }
     return new if order[new] > order[current] else current
+
+
+async def calc_sla_rolling_ping_async(db, host_id, window=50):
+    stmt = (
+        select(CheckResult)
+        .filter(CheckResult.host_id == host_id, CheckResult.check_type == "ping")
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+    if not rows:
+        return None
+    ok = sum(1 for r in rows if r.success)
+    return round(ok / len(rows) * 100, 2)
+
+
+async def calc_sla_rolling_tcp_ports_async(db, host_id, tcp_ports, window=50):
+    ports = [int(p) for p in (tcp_ports or []) if p is not None]
+    if not ports:
+        return None
+    stmt = (
+        select(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "tcp",
+            CheckResult.tcp_port.in_(ports),
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+    if not rows:
+        return None
+    ok = sum(1 for r in rows if r.success)
+    return round(ok / len(rows) * 100, 2)
+
+
+async def calc_sla_rolling_http_async(db, host_id, window=50):
+    stmt = (
+        select(CheckResult)
+        .filter(CheckResult.host_id == host_id, CheckResult.check_type == "http")
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+    if not rows:
+        return None
+    success_count = sum(1 for r in rows if r.success)
+    return round((success_count / len(rows)) * 100, 2)
+
+
+async def calc_jitter_ping_async(db, host_id, window=10):
+    stmt = (
+        select(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "ping",
+            CheckResult.latency != None,
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+    if len(rows) < 2:
+        return None
+    values = [r.latency for r in rows]
+    values.reverse()
+    diffs = [abs(values[i] - values[i - 1]) for i in range(1, len(values))]
+    return round(sum(diffs) / len(diffs), 2)
+
+
+async def calc_jitter_tcp_ports_async(db, host_id, tcp_ports, window=10):
+    ports = [int(p) for p in (tcp_ports or []) if p is not None]
+    if not ports:
+        return None
+    stmt = (
+        select(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "tcp",
+            CheckResult.tcp_port.in_(ports),
+            CheckResult.latency != None,
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+    if len(rows) < 2:
+        return None
+    values = [r.latency for r in rows]
+    values.reverse()
+    diffs = [abs(values[i] - values[i - 1]) for i in range(1, len(values))]
+    return round(sum(diffs) / len(diffs), 2)
+
+
+async def calc_jitter_http_async(db, host_id, window=10):
+    stmt = (
+        select(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "http",
+            CheckResult.success == True,
+            CheckResult.latency != None,
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+    if len(rows) < 3:
+        return None
+    latencies = [r.latency for r in rows]
+    latencies.reverse()
+    diffs = [abs(latencies[i] - latencies[i - 1]) for i in range(1, len(latencies))]
+    return round(sum(diffs) / len(diffs), 2)
+
+
+async def calc_latency_trend_ping_async(db, host_id, window=10):
+    stmt = (
+        select(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "ping",
+            CheckResult.success == True,
+            CheckResult.latency != None,
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+    if len(rows) < 5:
+        return None
+    values = [r.latency for r in rows]
+    values.reverse()
+    x = list(range(len(values)))
+    x_mean = sum(x) / len(x)
+    y_mean = sum(values) / len(values)
+    num = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, values))
+    den = sum((xi - x_mean) ** 2 for xi in x)
+    if den == 0:
+        return 0
+    slope = num / den
+    return round(slope, 2)
+
+
+async def calc_latency_trend_http_async(db, host_id, window=10):
+    stmt = (
+        select(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == "http",
+            CheckResult.success == True,
+            CheckResult.latency != None,
+        )
+        .order_by(CheckResult.timestamp.desc())
+        .limit(window)
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+    if len(rows) < 5:
+        return None
+    values = [r.latency for r in rows]
+    values.reverse()
+    x = list(range(len(values)))
+    x_mean = sum(x) / len(x)
+    y_mean = sum(values) / len(values)
+    num = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, values))
+    den = sum((xi - x_mean) ** 2 for xi in x)
+    if den == 0:
+        return 0
+    slope = num / den
+    return round(slope, 2)

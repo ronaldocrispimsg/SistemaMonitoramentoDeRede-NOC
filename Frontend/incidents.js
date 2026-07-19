@@ -1,4 +1,6 @@
-const API = "http://127.0.0.1:8000";
+const API = (window.location.protocol === "file:" || window.location.port === "5500" || window.location.port === "3000")
+    ? "http://127.0.0.1:8000"
+    : "/api";
 
 async function fetchWithAuth(url, options = {}) {
     const token = localStorage.getItem("token");
@@ -13,13 +15,18 @@ async function fetchWithAuth(url, options = {}) {
         "Authorization": `Bearer ${token}`,
     };
 
-    const response = await fetch(url, { ...options, headers });
-    if (response.status === 401) {
-        localStorage.clear();
-        window.location.href = "login.html";
+    try {
+        const response = await fetch(url, { ...options, headers });
+        if (response.status === 401) {
+            localStorage.clear();
+            window.location.href = "login.html";
+            return null;
+        }
+        return response;
+    } catch (error) {
+        console.error("Erro de conexão:", error);
         return null;
     }
-    return response;
 }
 
 function formatDateTime(value) {

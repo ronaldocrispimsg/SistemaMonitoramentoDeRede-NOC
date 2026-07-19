@@ -1,0 +1,78 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: noclite-db
+    restart: always
+    environment:
+      POSTGRES_USER: noclite
+      POSTGRES_PASSWORD: noclite_password
+      POSTGRES_DB: noclite
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./Database/postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U noclite -d noclite"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile
+    container_name: noclite-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://noclite:noclite_password@db:5432/noclite
+    restart: always
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: noclite-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: always
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: noclite-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ./RabbitMQ/data:/var/lib/rabbitmq
+      - ./RabbitMQ/log:/var/log/rabbitmq
+    restart: always
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: noclite-n8n
+    user: root
+    ports:
+      - "5678:5678"
+    depends_on:
+      - db
+    volumes:
+      - ./N8N/data:/home/node/.n8n
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=db
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=noclite
+      - DB_POSTGRESDB_USER=noclite
+      - DB_POSTGRESDB_PASSWORD=noclite_password
+    restart: always

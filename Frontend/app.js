@@ -1,4 +1,6 @@
-const API = "http://127.0.0.1:8000";
+const API = (window.location.protocol === "file:" || window.location.port === "5500" || window.location.port === "3000")
+    ? "http://127.0.0.1:8000"
+    : "/api";
 const charts = {};
 const MAX_POINTS_PER_SERIES = 100;
 let authRedirectScheduled = false;
@@ -356,31 +358,35 @@ async function changePassword(){
 
     const token = localStorage.getItem("token");
 
-    const res = await fetch(`${API}/auth/change-password`,{
-        method:"POST",
-        headers:{
-            "Content-Type":"application/json",
-            "Authorization":"Bearer "+token
-        },
-        body: JSON.stringify({
-            current_password:currentPwd,
-            new_password:newPwd
-        })
-    });
+    try {
+        const res = await fetch(`${API}/auth/change-password`,{
+            method:"POST",
+            headers:{
+                "Content-Type":"application/json",
+                "Authorization":"Bearer "+token
+            },
+            body: JSON.stringify({
+                current_password:currentPwd,
+                new_password:newPwd
+            })
+        });
 
-    if(res.status === 403){
-        showToast("error", "Conta bloqueada. Contate o administrador.");
-        return;
-    }
+        if(res.status === 403){
+            showToast("error", "Conta bloqueada. Contate o administrador.");
+            return;
+        }
 
-    if(res.ok){
-        showToast("success", "Senha alterada com sucesso.");
-        localStorage.removeItem("token");
-        setTimeout(() => {
-            window.location.href = "login.html";
-        }, 700);
-    }else{
-        showToast("error", "Erro ao alterar senha.");
+        if(res.ok){
+            showToast("success", "Senha alterada com sucesso.");
+            localStorage.removeItem("token");
+            setTimeout(() => {
+                window.location.href = "login.html";
+            }, 700);
+        }else{
+            showToast("error", "Erro ao alterar senha.");
+        }
+    } catch (error) {
+        showToast("error", "Não foi possível conectar ao servidor.");
     }
 
 }

@@ -1,6 +1,7 @@
 import socket
 import ipaddress
 from datetime import datetime
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from Backend.models import CheckResult, Incident, Host
 from Backend.notifications import (
@@ -233,6 +234,127 @@ def consecutive_failures(db, host_id, limit=3, check_types=None):
         .limit(limit)
         .all()
     )
+
+    if len(recent) < limit:
+        return False
+
+    return all(not c.success for c in recent)
+
+
+async def get_last_check_async(db, host_id: int, check_type: str) -> CheckResult | None:
+    stmt = (
+        select(CheckResult)
+        .filter(
+            CheckResult.host_id == host_id,
+            CheckResult.check_type == check_type
+        )
+        .order_by(CheckResult.timestamp.desc())
+    )
+    res = await db.execute(stmt)
+    return res.scalars().first()
+
+
+async def open_incident_async(db, host, reason, incident_type=None, check_used=None, auto_commit=True):
+    incident_type = normalize_incident_type(incident_type)
+    stmt = select(Incident).filter(
+        Incident.host_name == host.name,
+        Incident.status == "OPEN"
+    )
+    res = await db.execute(stmt)
+    existing = res.scalars().all()
+
+    for inc in existing:
+        if parse_incident_type(inc.reason) == incident_type:
+            return inc
+
+    formatted_reason = format_incident_reason(incident_type, reason)
+
+    incident = Incident(
+        host_name=host.name,
+        reason=formatted_reason
+    )
+
+    db.add(incident)
+    if auto_commit:
+        await db.commit()
+
+    if incident_type == INCIDENT_TYPE_DNS_FAILURE:
+        msg = build_incident_dns_message(host, host.address, incident.started_time)
+    elif incident_type == INCIDENT_TYPE_SERVICE_DOWN:
+        msg = build_incident_host_unavailable_message(host, check_used or "N/A", incident.started_time)
+    elif incident_type == INCIDENT_TYPE_SERVICE_DEGRADED:
+        msg = build_incident_service_degraded_message(host, check_used or "N/A", incident.started_time)
+    else:
+        msg = build_incident_open_message(host, "GENÉRICO", strip_incident_prefix(formatted_reason), incident.started_time)
+    send_telegram_alert(msg)
+    return incident
+
+
+async def close_incident_async(db, host_name, incident_type=None, auto_commit=True):
+    normalized_type = normalize_incident_type(incident_type) if incident_type else None
+
+    stmt = select(Incident).filter(
+        Incident.host_name == host_name,
+        Incident.status == "OPEN"
+    ).order_by(Incident.started_time.asc())
+    res = await db.execute(stmt)
+    open_incidents = res.scalars().all()
+
+    if not open_incidents:
+        return []
+
+    targets = []
+    for inc in open_incidents:
+        if normalized_type is None or parse_incident_type(inc.reason) == normalized_type:
+            targets.append(inc)
+
+    if not targets:
+        return []
+
+    stmt_host = select(Host).filter(Host.name == host_name)
+    res_host = await db.execute(stmt_host)
+    host = res_host.scalars().first()
+    host_stub = type(
+        "HostStub",
+        (),
+        {"name": host_name, "address": host.address if host else "N/A"}
+    )()
+
+    closed = []
+    for incident in targets:
+        incident.status = "CLOSED"
+        incident.ended_time = datetime.utcnow()
+
+        duration = incident.ended_time - incident.started_time
+        incident.duration_seconds = int(duration.total_seconds())
+
+        send_telegram_alert(
+            build_incident_closed_message(
+                host_stub,
+                incident.ended_time,
+                incident_type=parse_incident_type(incident.reason)
+            )
+        )
+        closed.append(incident)
+
+    if auto_commit:
+        await db.commit()
+    return closed
+
+
+async def consecutive_failures_async(db, host_id, limit=3, check_types=None):
+    stmt = select(CheckResult).filter(CheckResult.host_id == host_id)
+
+    if check_types:
+        stmt = stmt.filter(CheckResult.check_type.in_(check_types))
+
+    stmt = (
+        stmt
+        .order_by(CheckResult.timestamp.desc())
+        .limit(limit)
+    )
+    res = await db.execute(stmt)
+    recent = res.scalars().all()
 
     if len(recent) < limit:
         return False

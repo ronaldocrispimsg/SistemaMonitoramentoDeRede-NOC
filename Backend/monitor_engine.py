@@ -95,7 +95,7 @@ class MonitorEngine:
         cycle_ts = time.strftime("%Y-%m-%d %H:%M:%S")
         logger.info("ciclo iniciado em %s", cycle_ts)
 
-        host_ids = await asyncio.to_thread(get_active_host_ids)
+        host_ids = await get_active_host_ids()
         logger.info("hosts ativos para checagem: %s", len(host_ids))
 
         if not host_ids:
@@ -124,7 +124,7 @@ class MonitorEngine:
     async def check_host(self, host_id: int) -> None:
         async with self._semaphore:
             try:
-                await asyncio.to_thread(process_host_check, host_id)
+                await process_host_check(host_id)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -133,7 +133,7 @@ class MonitorEngine:
     async def _run_cleanup(self) -> None:
         try:
             logger.info("iniciando rotina de cleanup")
-            await asyncio.to_thread(cleanup_old_data)
+            await cleanup_old_data()
         except asyncio.CancelledError:
             raise
         except Exception:

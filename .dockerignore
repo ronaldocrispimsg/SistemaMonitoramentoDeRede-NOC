@@ -1,0 +1,13 @@
+.git
+.venv
+.python-version
+__pycache__
+*.pyc
+*.db
+*.sqlite
+Database/*.db
+N8N/*
+RabbitMQ/*
+.env
+uv.lock
+pyproject.toml
