@@ -10,6 +10,7 @@ from Backend.monitor_engine import monitor_engine
 from Backend.routes.hosts import router
 from Backend.snmp_engine import reset_snmp_backoff
 from Backend.security import hash_password
+from Backend.mq_manager import mq_manager
 
 Base.metadata.create_all(bind=engine)
 
@@ -42,11 +43,14 @@ create_default_admin()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     reset_snmp_backoff()
+    await mq_manager.connect()
+    await mq_manager.start_consumers()
     await monitor_engine.start()
     try:
         yield
     finally:
         await monitor_engine.stop()
+        await mq_manager.close()
 
 
 app = FastAPI(lifespan=lifespan)

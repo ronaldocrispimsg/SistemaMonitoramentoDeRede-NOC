@@ -21,7 +21,7 @@ const pollingState = {
 
 const recentAlertCache = new Map();
 const ALERT_DEDUP_WINDOW_MS = 45000;
-const SEEN_ALERTS_STORAGE_KEY = "noclite_seen_alerts_v1";
+const SEEN_ALERTS_STORAGE_KEY = "netspot_seen_alerts_v1";
 const MAX_SEEN_ALERTS = 200;
 const INCIDENT_TYPE_LABELS = {
     DNS_FAILURE: "Falha DNS",

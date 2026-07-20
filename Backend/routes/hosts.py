@@ -11,7 +11,7 @@ import psutil
 from Backend.database import get_db
 from Backend.metrics import total_downtime, total_incidents, availability_last_10_min
 from Backend.models import CheckResult, Host, Alert, Incident, User, SNMPMetric
-from Backend.checker import ping_host, tcp_check, resolve_dns_cached
+from Backend.checker import ping_host, tcp_check, resolve_dns_cached_sync
 from Backend.notifications import telegram_health_check
 from Backend.schemas import (
     HostCreate,
@@ -467,7 +467,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
     if is_ip(data.address):
         resolved = reverse_dns(data.address)
     else:
-        dns_result = resolve_dns_cached(data.address, db)  # Verifica se o endereço é válido
+        dns_result = resolve_dns_cached_sync(data.address, db)  # Verifica se o endereço é válido
         ips = extract_ips_from_dns_result(dns_result)
         
         if not ips:
@@ -692,7 +692,7 @@ def check_host(host_name: str, db: Session = Depends(get_db), user: User = Depen
     if not host:
         raise HTTPException(status_code=404, detail="Host não encontrado")
 
-    dns_result = resolve_dns_cached(host.address, db)
+    dns_result = resolve_dns_cached_sync(host.address, db)
     ips = extract_ips_from_dns_result(dns_result)
 
     if not ips:
@@ -928,7 +928,7 @@ def update_host(host_name: str, data: HostUpdate, db: Session = Depends(get_db),
     if is_ip(data.address):
         resolved = reverse_dns(data.address)
     else:
-        dns_result = resolve_dns_cached(data.address, db)
+        dns_result = resolve_dns_cached_sync(data.address, db)
         ips = extract_ips_from_dns_result(dns_result)
 
         if not ips:

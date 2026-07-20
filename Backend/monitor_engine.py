@@ -10,6 +10,7 @@ from Backend.scheduler import (
     get_active_host_ids,
     process_host_check,
 )
+from Backend.mq_manager import mq_manager
 
 logger = logging.getLogger("noc_lite.monitor_engine")
 
@@ -102,33 +103,19 @@ class MonitorEngine:
             logger.info("ciclo finalizado: nenhum host ativo")
             return
 
-        tasks = [asyncio.create_task(self.check_host(host_id)) for host_id in host_ids]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
         failures = 0
-        for host_id, result in zip(host_ids, results):
-            if isinstance(result, Exception):
+        for host_id in host_ids:
+            try:
+                await mq_manager.publish_host_check(host_id)
+            except Exception:
                 failures += 1
-                logger.exception(
-                    "erro na task do host id=%s",
-                    host_id,
-                    exc_info=result,
-                )
+                logger.exception("erro ao publicar tarefa de checagem do host id=%s", host_id)
 
         logger.info(
-            "ciclo finalizado | total_hosts=%s | falhas=%s",
+            "ciclo finalizado | total_hosts=%s | falhas_publicacao=%s",
             len(host_ids),
             failures,
         )
-
-    async def check_host(self, host_id: int) -> None:
-        async with self._semaphore:
-            try:
-                await process_host_check(host_id)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("erro no processamento do host id=%s", host_id)
 
     async def _run_cleanup(self) -> None:
         try:

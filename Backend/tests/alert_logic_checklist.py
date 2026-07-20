@@ -183,7 +183,7 @@ def run():
     db.commit()
     recovery_ok = (
         open_incident_count(db, h3.name, utils.INCIDENT_TYPE_SERVICE_DOWN) == 0 and
-        any("INCIDENTE FECHADO" in m and "responder normalmente" in m for m in telegram_messages)
+        any(isinstance(m, dict) and m.get("event") == "incident_closed" and m.get("incident_type") == utils.INCIDENT_TYPE_SERVICE_DOWN for m in telegram_messages)
     )
     results.append(recovery_ok)
 

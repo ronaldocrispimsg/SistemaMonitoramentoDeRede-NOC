@@ -4,8 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://noclite:noclite_password@localhost:5432/noclite")
-logger = logging.getLogger("noc_lite.database")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://netspot:netspot_password@localhost:5432/netspot")
+logger = logging.getLogger("netspot.database")
 
 # Engine síncrono (para endpoints FastAPI síncronos)
 engine = create_engine(

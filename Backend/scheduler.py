@@ -48,6 +48,7 @@ from Backend.notifications import (
     build_preventive_alert_message,
     build_recovery_message,
     send_telegram_alert,
+    send_telegram_alert_async,
 )
 from Backend.snmp_engine import (
     can_attempt_snmp,
@@ -293,9 +294,13 @@ async def _host_check_async(host_id: int) -> None:
                         new_status=str(ttl),
                     )
                 )
-                send_telegram_alert(
-                    build_dns_ttl_low_message(host, host.address, ttl, datetime.utcnow())
-                )
+                await send_telegram_alert_async({
+                    "event": "dns_ttl_low",
+                    "host_name": host.name,
+                    "host_address": host.address,
+                    "ttl": ttl,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
                 host.last_ttl_alert = datetime.utcnow()
 
         if not ips:
@@ -374,15 +379,14 @@ async def _host_check_async(host_id: int) -> None:
                         new_status=new_ip,
                     )
                 )
-                send_telegram_alert(
-                    build_dns_change_message(
-                        host,
-                        host.address,
-                        old_ip,
-                        new_ip,
-                        datetime.utcnow(),
-                    )
-                )
+                await send_telegram_alert_async({
+                    "event": "dns_change",
+                    "host_name": host.name,
+                    "host_address": host.address,
+                    "old_ip": old_ip,
+                    "new_ip": new_ip,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
 
         host.last_resolved_ip = ip
         await close_incident_async(
@@ -469,14 +473,13 @@ async def _host_check_async(host_id: int) -> None:
                     new_status=f"score={score}",
                 )
             )
-            send_telegram_alert(
-                build_health_critical_message(
-                    host,
-                    "health_score",
-                    score,
-                    datetime.utcnow(),
-                )
-            )
+            await send_telegram_alert_async({
+                "event": "health_critical",
+                "host_name": host.name,
+                "host_address": host.address,
+                "health_score": score,
+                "timestamp": datetime.utcnow().isoformat()
+            })
 
         new_status, primary_check, service_up_without_icmp = determine_operational_state(
             host,
@@ -519,16 +522,16 @@ async def _host_check_async(host_id: int) -> None:
                         new_status=new_status,
                     )
                 )
-                send_telegram_alert(
-                    build_failure_confirmed_message(
-                        host,
-                        old_status,
-                        new_status,
-                        host.fail_streak,
-                        datetime.utcnow(),
-                        check_used=primary_check,
-                    )
-                )
+                await send_telegram_alert_async({
+                    "event": "failure_confirmed",
+                    "host_name": host.name,
+                    "host_address": host.address,
+                    "old_status": old_status,
+                    "new_status": new_status,
+                    "fail_streak": host.fail_streak,
+                    "check_used": primary_check,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
             elif is_real_recovery:
                 db.add(
                     Alert(
@@ -537,9 +540,13 @@ async def _host_check_async(host_id: int) -> None:
                         new_status="UP_RECOVERED",
                     )
                 )
-                send_telegram_alert(
-                    build_recovery_message(host, old_status, datetime.utcnow())
-                )
+                await send_telegram_alert_async({
+                    "event": "recovery",
+                    "host_name": host.name,
+                    "host_address": host.address,
+                    "old_status": old_status,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
 
         host.last_check = datetime.utcnow()
 
@@ -742,14 +749,14 @@ async def _host_check_async(host_id: int) -> None:
                     1800,
                     fingerprint=prevent_fingerprint,
                 ):
-                    send_telegram_alert(
-                        build_preventive_alert_message(
-                            host,
-                            condition_text,
-                            details_text,
-                            datetime.utcnow(),
-                        )
-                    )
+                    await send_telegram_alert_async({
+                        "event": "preventive_alert",
+                        "host_name": host.name,
+                        "host_address": host.address,
+                        "condition": condition_text,
+                        "details": details_text,
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
                     host.last_preventive_alert = datetime.utcnow()
 
         await db.commit()

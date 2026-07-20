@@ -4,12 +4,84 @@ import re
 import json
 import time
 import dns.asyncresolver
+import dns.resolver
 import httpx
 import socket
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from sqlalchemy import select
 from Backend.models import DNSCache
+
+def resolve_dns_real_sync(address):
+    try:
+        answers = dns.resolver.resolve(address, "A")
+    except:
+        try:
+            answers = dns.resolver.resolve(address, "AAAA")
+        except:
+            return [], None
+
+    ips = [r.to_text() for r in answers]
+    ttl = answers.rrset.ttl
+    return ips, ttl
+
+def resolve_dns_cached_sync(address: str, db):
+    # ---------- já é IP ----------
+    try:
+        socket.inet_pton(socket.AF_INET, address)
+        return [address], None, None
+    except:
+        pass
+
+    try:
+        socket.inet_pton(socket.AF_INET6, address)
+        return [address], None, None
+    except:
+        pass
+
+    # ---------- cache ----------
+    record = db.query(DNSCache).filter(DNSCache.hostname == address).first()
+
+    now = datetime.utcnow()
+    ttl_remaining = 0
+
+    if record:
+        ttl_remaining = (record.expires_time - now).total_seconds()
+
+        # cache válido (com margem)
+        if ttl_remaining > record.ttl * 0.1:
+            return json.loads(record.ip_list), record.ttl, int(ttl_remaining)
+
+    # resolve DNS real
+    ips, ttl = resolve_dns_real_sync(address)
+
+    if not ips and record:
+        return json.loads(record.ip_list), record.ttl, int(ttl_remaining)
+    elif not ips:
+        return [], None, None
+
+    ttl = ttl or 60
+    expires = now + timedelta(seconds=ttl)
+
+    # ---------- salvar ----------
+    if record:
+        record.ip_list = json.dumps(ips)
+        record.ttl = ttl
+        record.resolved_time = now
+        record.expires_time = expires
+    else:
+        record = DNSCache(
+            hostname=address,
+            ip_list=json.dumps(ips),
+            ttl=ttl,
+            resolved_time=now,
+            expires_time=expires
+        )
+        db.add(record)
+
+    db.flush()
+
+    return ips, ttl, ttl
 
 async def resolve_dns_real(address):
     try:

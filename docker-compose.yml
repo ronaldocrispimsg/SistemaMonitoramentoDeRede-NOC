@@ -1,18 +1,18 @@
 services:
   db:
     image: postgres:15-alpine
-    container_name: noclite-db
+    container_name: netspot-db
     restart: always
     environment:
-      POSTGRES_USER: noclite
-      POSTGRES_PASSWORD: noclite_password
-      POSTGRES_DB: noclite
+      POSTGRES_USER: netspot
+      POSTGRES_PASSWORD: netspot_password
+      POSTGRES_DB: netspot
     ports:
       - "5432:5432"
     volumes:
       - ./Database/postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U noclite -d noclite"]
+      test: ["CMD-SHELL", "pg_isready -U netspot -d netspot"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,7 +21,7 @@ services:
     build:
       context: .
       dockerfile: Backend/Dockerfile
-    container_name: noclite-backend
+    container_name: netspot-backend
     ports:
       - "8000:8000"
     depends_on:
@@ -30,14 +30,15 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://noclite:noclite_password@db:5432/noclite
+      - DATABASE_URL=postgresql://netspot:netspot_password@db:5432/netspot
+      - RABBITMQ_HOST=rabbitmq
     restart: always
 
   frontend:
     build:
       context: ./Frontend
       dockerfile: Dockerfile
-    container_name: noclite-frontend
+    container_name: netspot-frontend
     ports:
       - "8080:80"
     depends_on:
@@ -46,7 +47,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: noclite-rabbitmq
+    container_name: netspot-rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -57,12 +58,14 @@ services:
 
   n8n:
     image: docker.n8n.io/n8nio/n8n
-    container_name: noclite-n8n
+    container_name: netspot-n8n
     user: root
     ports:
       - "5678:5678"
     depends_on:
       - db
+    env_file:
+      - .env
     volumes:
       - ./N8N/data:/home/node/.n8n
     environment:
@@ -72,7 +75,7 @@ services:
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=db
       - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=noclite
-      - DB_POSTGRESDB_USER=noclite
-      - DB_POSTGRESDB_PASSWORD=noclite_password
+      - DB_POSTGRESDB_DATABASE=netspot
+      - DB_POSTGRESDB_USER=netspot
+      - DB_POSTGRESDB_PASSWORD=netspot_password
     restart: always

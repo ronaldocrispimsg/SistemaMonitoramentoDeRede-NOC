@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from Backend.models import CheckResult, Incident, Host
 from Backend.notifications import (
     send_telegram_alert,
+    send_telegram_alert_async,
     build_incident_dns_message,
     build_incident_host_unavailable_message,
     build_incident_service_degraded_message,
@@ -164,15 +165,16 @@ def open_incident(db, host, reason, incident_type=None, check_used=None, auto_co
     if auto_commit:
         db.commit()
 
-    if incident_type == INCIDENT_TYPE_DNS_FAILURE:
-        msg = build_incident_dns_message(host, host.address, incident.started_time)
-    elif incident_type == INCIDENT_TYPE_SERVICE_DOWN:
-        msg = build_incident_host_unavailable_message(host, check_used or "N/A", incident.started_time)
-    elif incident_type == INCIDENT_TYPE_SERVICE_DEGRADED:
-        msg = build_incident_service_degraded_message(host, check_used or "N/A", incident.started_time)
-    else:
-        msg = build_incident_open_message(host, "GENÉRICO", strip_incident_prefix(formatted_reason), incident.started_time)
-    send_telegram_alert(msg)
+    payload = {
+        "event": "incident_opened",
+        "host_name": host.name,
+        "host_address": host.address,
+        "incident_type": incident_type,
+        "check_used": check_used or "N/A",
+        "reason": formatted_reason,
+        "started_time": (incident.started_time or datetime.utcnow()).isoformat()
+    }
+    send_telegram_alert(payload)
     return incident
 
 def close_incident(db, host_name, incident_type=None, auto_commit=True):
@@ -209,13 +211,15 @@ def close_incident(db, host_name, incident_type=None, auto_commit=True):
         duration = incident.ended_time - incident.started_time
         incident.duration_seconds = int(duration.total_seconds())
 
-        send_telegram_alert(
-            build_incident_closed_message(
-                host_stub,
-                incident.ended_time,
-                incident_type=parse_incident_type(incident.reason)
-            )
-        )
+        payload = {
+            "event": "incident_closed",
+            "host_name": host_name,
+            "host_address": host_stub.address,
+            "incident_type": parse_incident_type(incident.reason),
+            "ended_time": incident.ended_time.isoformat(),
+            "duration_seconds": incident.duration_seconds
+        }
+        send_telegram_alert(payload)
         closed.append(incident)
 
     if auto_commit:
@@ -278,15 +282,16 @@ async def open_incident_async(db, host, reason, incident_type=None, check_used=N
     if auto_commit:
         await db.commit()
 
-    if incident_type == INCIDENT_TYPE_DNS_FAILURE:
-        msg = build_incident_dns_message(host, host.address, incident.started_time)
-    elif incident_type == INCIDENT_TYPE_SERVICE_DOWN:
-        msg = build_incident_host_unavailable_message(host, check_used or "N/A", incident.started_time)
-    elif incident_type == INCIDENT_TYPE_SERVICE_DEGRADED:
-        msg = build_incident_service_degraded_message(host, check_used or "N/A", incident.started_time)
-    else:
-        msg = build_incident_open_message(host, "GENÉRICO", strip_incident_prefix(formatted_reason), incident.started_time)
-    send_telegram_alert(msg)
+    payload = {
+        "event": "incident_opened",
+        "host_name": host.name,
+        "host_address": host.address,
+        "incident_type": incident_type,
+        "check_used": check_used or "N/A",
+        "reason": formatted_reason,
+        "started_time": (incident.started_time or datetime.utcnow()).isoformat()
+    }
+    await send_telegram_alert_async(payload)
     return incident
 
 
@@ -328,13 +333,15 @@ async def close_incident_async(db, host_name, incident_type=None, auto_commit=Tr
         duration = incident.ended_time - incident.started_time
         incident.duration_seconds = int(duration.total_seconds())
 
-        send_telegram_alert(
-            build_incident_closed_message(
-                host_stub,
-                incident.ended_time,
-                incident_type=parse_incident_type(incident.reason)
-            )
-        )
+        payload = {
+            "event": "incident_closed",
+            "host_name": host_name,
+            "host_address": host.address if host else "N/A",
+            "incident_type": parse_incident_type(incident.reason),
+            "ended_time": incident.ended_time.isoformat(),
+            "duration_seconds": incident.duration_seconds
+        }
+        await send_telegram_alert_async(payload)
         closed.append(incident)
 
     if auto_commit:
