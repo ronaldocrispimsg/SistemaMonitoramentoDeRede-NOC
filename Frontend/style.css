@@ -2,19 +2,38 @@
 BASE
 ========================= */
 
-:root{
-    --bg-main:#f4f6f8;
-    --bg-panel:#ffffff;
-    --bg-soft:#f7f7f7;
-    --text-main:#1f2937;
-    --text-soft:#6b7280;
-    --line:#d1d5db;
-    --primary:#a3a3a3;
-    --primary-dark:#7a7a7a;
-    --danger:#8f8f8f;
-    --success:#7d7d7d;
-    --warning:#9a9a9a;
+:root {
+    --bg-main: #f8fafc;
+    --bg-panel: #ffffff;
+    --bg-soft: #f1f5f9;
+    --text-main: #0f172a;
+    --text-soft: #475569;
+    --line: #e2e8f0;
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --danger: #ef4444;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --gradient-1: #efefef;
+    --gradient-2: #e7e7e7;
 }
+
+.dark-theme {
+    --bg-main: #0b0f19;
+    --bg-panel: #111827;
+    --bg-soft: #1f2937;
+    --text-main: #f9fafb;
+    --text-soft: #9ca3af;
+    --line: #374151;
+    --primary: #60a5fa;
+    --primary-dark: #3b82f6;
+    --danger: #f87171;
+    --success: #34d399;
+    --warning: #fbbf24;
+    --gradient-1: #1e1b4b;
+    --gradient-2: #0f172a;
+}
+
 
 *{
     box-sizing:border-box;
@@ -23,11 +42,12 @@ BASE
 body{
     font-family: "Poppins", "Segoe UI", sans-serif;
     background:
-        radial-gradient(circle at 0% 0%, #efefef 0%, transparent 32%),
-        radial-gradient(circle at 100% 0%, #e7e7e7 0%, transparent 28%),
+        radial-gradient(circle at 0% 0%, var(--gradient-1) 0%, transparent 32%),
+        radial-gradient(circle at 100% 0%, var(--gradient-2) 0%, transparent 28%),
         var(--bg-main);
     margin:0;
     color:var(--text-main);
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* =========================
@@ -43,11 +63,12 @@ LOGIN
 
 .login-box{
     width:min(420px, 92vw);
-    background:white;
+    background:var(--bg-panel);
     padding:28px 24px;
     border-radius:10px;
     box-shadow:0 4px 15px rgba(0,0,0,0.08);
     text-align:center;
+    color:var(--text-main);
 }
 
 .login-box h1{
@@ -58,7 +79,7 @@ LOGIN
 .login-subtitle{
     margin:0 0 18px 0;
     font-size:0.9rem;
-    color:#64748b;
+    color:var(--text-soft);
 }
 
 .login-box input{
@@ -66,7 +87,9 @@ LOGIN
     margin:8px 0;
     padding:10px;
     border-radius:6px;
-    border:1px solid #ccc;
+    border:1px solid var(--line);
+    background:var(--bg-soft);
+    color:var(--text-main);
 }
 
 .login-box button{
@@ -75,14 +98,14 @@ LOGIN
     padding:10px;
     border-radius:6px;
     border:none;
-    background:#c9c9c9;
+    background:var(--primary);
     color:white;
     font-weight:bold;
     cursor:pointer;
 }
 
 .login-box button:hover{
-    background:#8d8d8d;
+    background:var(--primary-dark);
 }
 
 .login-box button.is-loading{
@@ -2394,3 +2417,149 @@ input[type=number]{
         align-items:flex-start;
     }
 }
+
+/* ==========================================================================
+   NETSPOT BRANDING & THEME TOGGLE CUSTOM STYLING
+   ========================================================================== */
+
+/* Logo Navigation Header */
+.app-logo-link {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    height: 100%;
+}
+
+.app-logo {
+    height: 36px;
+    width: auto;
+    object-fit: contain;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-logo-link:hover .app-logo {
+    transform: scale(1.03);
+}
+
+/* Breadcrumb Subtitle for sub-pages */
+.page-subtitle {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-soft);
+    margin-left: 8px;
+    user-select: none;
+}
+
+/* Responsive Hide-Show Logo Images */
+.logo-dark {
+    display: none !important;
+}
+.logo-light {
+    display: block !important;
+}
+
+.dark-theme .logo-light {
+    display: none !important;
+}
+.dark-theme .logo-dark {
+    display: block !important;
+}
+
+/* Login Logo Placement */
+.login-logo-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.login-logo {
+    max-height: 85px;
+    width: auto;
+    object-fit: contain;
+}
+
+/* Theme Toggle Button Styling */
+.icon-btn.nav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--text-soft);
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+    margin-right: 8px;
+}
+
+.icon-btn.nav:hover {
+    background-color: var(--bg-soft);
+    color: var(--text-main);
+    transform: translateY(-1px);
+}
+
+.icon-btn.nav svg {
+    fill: currentColor;
+    transition: transform 0.3s ease;
+}
+
+.icon-btn.nav:active svg {
+    transform: rotate(45deg) scale(0.92);
+}
+
+/* ==========================================================================
+   DARK THEME COMPONENT OVERRIDES
+   ========================================================================== */
+
+.dark-theme .summary-card,
+.dark-theme .overview-card,
+.dark-theme .login-box,
+.dark-theme .modal-content,
+.dark-theme .card,
+.dark-theme .host-section-card,
+.dark-theme .snmp-kpi-card,
+.dark-theme .alert-card,
+.dark-theme .trash-modal-content,
+.dark-theme .sidebar-menu {
+    background: var(--bg-panel) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+.dark-theme input,
+.dark-theme select,
+.dark-theme textarea {
+    background: var(--bg-soft) !important;
+    color: var(--text-main) !important;
+    border-color: var(--line) !important;
+}
+
+/* Chart and lists adjustments in dark theme */
+.dark-theme .trash-list {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+}
+
+.dark-theme .host-card-header,
+.dark-theme .card-header {
+    border-bottom-color: var(--line) !important;
+}
+
+.dark-theme .host-card-actions {
+    background: var(--bg-soft) !important;
+    border-top-color: var(--line) !important;
+}
+
+.dark-theme .ports-container,
+.dark-theme .modal-actions {
+    border-top-color: var(--line) !important;
+}
+
+.dark-theme .sidebar-header {
+    border-bottom-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+

@@ -10,13 +10,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NetSpot - Incidentes</title>
 <link rel="stylesheet" href="style.css">
+<script>
+  (function() {
+      const savedTheme = localStorage.getItem("theme");
+      if (savedTheme === "dark") {
+          document.documentElement.classList.add("dark-theme");
+      }
+  })();
+</script>
 </head>
 <body>
 <header class="app-topbar">
     <div class="app-topbar-inner">
         <div class="hero-copy app-topbar-title">
-            <h1>Histórico de Incidentes</h1>
+            <a href="dashboard.html" class="app-logo-link" title="Ir para o início">
+                <img src="images/logo/Prancheta 1.png" alt="NetSpot" class="app-logo logo-light">
+                <img src="images/logo/Prancheta 2.png" alt="NetSpot" class="app-logo logo-dark">
+            </a>
+            <span class="page-subtitle">/ Incidentes</span>
         </div>
+        <button id="themeToggleBtn" class="icon-btn nav" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
+            <svg id="themeToggleIcon" viewBox="0 0 24 24" aria-hidden="true" width="22" height="22">
+                <path d="M12 3a9 9 0 109 9 9.75 9.75 0 00-.67-3.4 6.78 6.78 0 01-7.93-7.93A9.75 9.75 0 0012 3z"/>
+            </svg>
+        </button>
         <a class="toolbar-link-btn icon-btn nav" href="dashboard.html" title="Voltar ao dashboard" aria-label="Voltar ao dashboard">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6M8 12h12"/></svg>
         </a>

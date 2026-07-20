@@ -5,14 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NetSpot - Login</title>
 <link rel="stylesheet" href="style.css">
-
+<script>
+  (function() {
+      const savedTheme = localStorage.getItem("theme");
+      if (savedTheme === "dark") {
+          document.documentElement.classList.add("dark-theme");
+      }
+  })();
+</script>
 </head>
 
 <body class="login-page">
 
 <div class="login-box">
 
-<h1>NetSpot</h1>
+<div class="login-logo-container">
+    <img src="images/logo/Prancheta 3.png" alt="NetSpot" class="login-logo">
+</div>
 <p class="login-subtitle">Painel de monitoramento e alertas</p>
 
 <form id="loginForm">
