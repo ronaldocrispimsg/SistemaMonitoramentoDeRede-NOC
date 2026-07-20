@@ -66,7 +66,7 @@ from Backend.utils import (
     open_incident,
 )
 
-logger = logging.getLogger("noc_lite.scheduler")
+logger = logging.getLogger("netspot.scheduler")
 
 ALERT_FAIL_THRESHOLD = 2
 ALERT_RECOVER_THRESHOLD = 1
@@ -77,9 +77,9 @@ _ALERT_COOLDOWN_LOCK = Lock()
 _DEGRADED_STREAKS = {}
 _DEGRADED_STREAKS_LOCK = Lock()
 
-MONITOR_INTERVAL_SECONDS = int(os.getenv("NOC_MONITOR_INTERVAL_SECONDS", "20"))
-CLEANUP_INTERVAL_SECONDS = int(os.getenv("NOC_CLEANUP_INTERVAL_SECONDS", "3600"))
-SNMP_ALLOWED_COMMUNITY = "noc-lite"
+MONITOR_INTERVAL_SECONDS = int(os.getenv("NETSPOT_MONITOR_INTERVAL_SECONDS", "20"))
+CLEANUP_INTERVAL_SECONDS = int(os.getenv("NETSPOT_CLEANUP_INTERVAL_SECONDS", "3600"))
+SNMP_ALLOWED_COMMUNITY = "netspot"
 
 
 def _alert_cooldown_passed(

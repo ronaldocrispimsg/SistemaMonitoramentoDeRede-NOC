@@ -5,6 +5,7 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    nmap \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency requirements
@@ -20,4 +21,4 @@ COPY Backend/ ./Backend/
 EXPOSE 8000
 
 # Start Backend using uvicorn
-CMD ["uvicorn", "Backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "Backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

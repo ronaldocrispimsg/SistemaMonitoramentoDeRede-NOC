@@ -302,6 +302,13 @@ button {
     background: var(--primary-dark);
 }
 
+.discovery-helper-text {
+    display: block;
+    margin: 6px 4px 0;
+    font-size: 0.8rem;
+    color: var(--text-soft);
+}
+
 .network-discovery-info {
     margin: 8px 4px 6px;
     color: #475569;
@@ -2553,7 +2560,7 @@ input[type=number] {
 }
 
 .app-logo {
-    height: 35px;
+    height: 48px;
     width: auto;
     object-fit: contain;
     transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2754,4 +2761,74 @@ input[type=number] {
 .dark-theme .trash-open-btn:hover,
 .dark-theme #refreshBtn:hover {
     background: var(--primary-dark) !important;
+}
+
+/* Host Details, Cause Pills, charts and history overrides in Dark Theme */
+.dark-theme .host-meta-item {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+.dark-theme .host-meta-item strong {
+    color: var(--text-main) !important;
+}
+
+.dark-theme .host-meta-item small {
+    color: var(--text-soft) !important;
+}
+
+.dark-theme .cause-pill.cause-normal {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+.dark-theme .cause-pill.cause-warning {
+    background: rgba(245, 158, 11, 0.15) !important;
+    border-color: #f59e0b !important;
+    color: #fbbf24 !important;
+}
+
+.dark-theme .cause-pill.cause-critical {
+    background: rgba(239, 68, 68, 0.15) !important;
+    border-color: #ef4444 !important;
+    color: #f87171 !important;
+}
+
+.dark-theme .snmp-section {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+.dark-theme .chart-box {
+    background: var(--bg-panel) !important;
+    border-color: var(--line) !important;
+    box-shadow: none !important;
+}
+
+.dark-theme .chart-title {
+    color: var(--text-main) !important;
+}
+
+.dark-theme .history-box {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+/* Incidents list rows in Dark Theme */
+.dark-theme .incident-row {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+.dark-theme .incident-row-reason {
+    color: var(--text-main) !important;
+}
+
+.dark-theme .incident-row-meta {
+    color: var(--text-soft) !important;
 }

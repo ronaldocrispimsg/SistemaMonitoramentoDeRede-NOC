@@ -56,7 +56,7 @@ _MAX_DISCOVERY_ADDRESSES = 4096
 def _apply_snmp_policy(host: Host, snmp_enabled: bool) -> None:
     enabled = bool(snmp_enabled)
     host.snmp_enabled = enabled
-    host.snmp_community = "noc-lite" if enabled else None
+    host.snmp_community = "netspot" if enabled else None
 
 
 def _apply_http_policy(host: Host, http_enabled: bool | None, selected_http: str | None) -> None:
@@ -167,11 +167,23 @@ def _interface_ignored(interface_name: str) -> bool:
 
 def _run_nmap_discovery(subnet: str) -> str:
     try:
+        dns_server = None
+        try:
+            net = ipaddress.ip_network(subnet, strict=False)
+            dns_server = str(next(net.hosts()))
+        except Exception:
+            pass
+
+        nmap_args = ["nmap", "-sn", "-PE", "-PS22,80,443", "-T4", "--max-rtt-timeout", "200ms", "--max-retries", "1"]
+        if dns_server:
+            nmap_args += ["--dns-servers", dns_server]
+        nmap_args += [subnet, "-oX", "-"]
+
         result = subprocess.run(
-            ["nmap", "-sn", subnet, "-oX", "-"],
+            nmap_args,
             capture_output=True,
             text=True,
-            timeout=45,
+            timeout=60,
             check=False,
         )
     except FileNotFoundError:
@@ -517,7 +529,7 @@ def create_host(data: HostCreate, db: Session = Depends(get_db), user: str = Dep
             http_enabled=bool(data.http_enabled),
             last_http_protocol=None,
             snmp_enabled=bool(data.snmp_enabled),
-            snmp_community="noc-lite" if data.snmp_enabled else None,
+            snmp_community="netspot" if data.snmp_enabled else None,
             hostname_resolved=resolved,
         )
         _store_host_ports(host, ports)

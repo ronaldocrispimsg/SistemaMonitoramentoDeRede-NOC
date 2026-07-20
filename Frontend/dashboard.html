@@ -93,9 +93,10 @@
     <article class="overview-card">
         <h2>Descoberta de Rede (LAN)</h2>
         <div class="network-discovery-form">
-            <input id="discoverSubnet" placeholder="Subnet CIDR (ex.: 192.168.0.0/24)">
+            <input id="discoverSubnet" value="192.168.1.0/24" placeholder="Subnet CIDR (ex.: 192.168.0.0/24)">
             <button id="discoverBtn" type="button">Descobrir rede</button>
         </div>
+        <small class="discovery-helper-text">Limite máximo permitido: máscara <strong>/20</strong> (máx. 4096 endereços).</small>
         <div id="networkDiscoveryInfo" class="network-discovery-info" aria-live="polite"></div>
         <div id="networkDiscoveryList" class="network-discovery-list">
             <small>Nenhuma descoberta executada.</small>

@@ -3,7 +3,7 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import os
 
-SECRET_KEY = os.getenv("NOC_SECRET_KEY")
+SECRET_KEY = os.getenv("NETSPOT_SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
@@ -22,7 +22,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def create_access_token(data: dict):
     if not SECRET_KEY:
-        raise RuntimeError("NOC_SECRET_KEY não configurada no ambiente")
+        raise RuntimeError("NETSPOT_SECRET_KEY não configurada no ambiente")
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
@@ -30,5 +30,5 @@ def create_access_token(data: dict):
 
 def decode_token(token: str):
     if not SECRET_KEY:
-        raise RuntimeError("NOC_SECRET_KEY não configurada no ambiente")
+        raise RuntimeError("NETSPOT_SECRET_KEY não configurada no ambiente")
     return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

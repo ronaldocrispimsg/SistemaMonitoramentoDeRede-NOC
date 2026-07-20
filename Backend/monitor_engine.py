@@ -12,7 +12,7 @@ from Backend.scheduler import (
 )
 from Backend.mq_manager import mq_manager
 
-logger = logging.getLogger("noc_lite.monitor_engine")
+logger = logging.getLogger("netspot.monitor_engine")
 
 
 class MonitorEngine:
@@ -24,7 +24,7 @@ class MonitorEngine:
     ) -> None:
         self.interval_seconds = max(1, int(interval_seconds))
         self.cleanup_interval_seconds = max(60, int(cleanup_interval_seconds))
-        default_concurrency = int(os.getenv("NOC_MONITOR_MAX_CONCURRENCY", "20"))
+        default_concurrency = int(os.getenv("NETSPOT_MONITOR_MAX_CONCURRENCY", "20"))
         self.max_concurrency = max(1, int(max_concurrency or default_concurrency))
         self._task: asyncio.Task | None = None
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
@@ -40,7 +40,7 @@ class MonitorEngine:
             return
 
         self._next_cleanup_at = time.monotonic() + self.cleanup_interval_seconds
-        self._task = asyncio.create_task(self._run_loop(), name="noc-monitor-loop")
+        self._task = asyncio.create_task(self._run_loop(), name="netspot-monitor-loop")
         logger.info(
             "monitor loop iniciado | interval=%ss | cleanup=%ss | max_concurrency=%s",
             self.interval_seconds,

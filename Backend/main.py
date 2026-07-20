@@ -17,9 +17,9 @@ Base.metadata.create_all(bind=engine)
 def create_default_admin():
     db = SessionLocal()
     try:
-        default_admin_password = os.getenv("NOC_DEFAULT_ADMIN_PASSWORD")
+        default_admin_password = os.getenv("NETSPOT_DEFAULT_ADMIN_PASSWORD")
         if not default_admin_password:
-            print("Banco de dados: NOC_DEFAULT_ADMIN_PASSWORD não configurada. Usuário admin padrão não será criado.")
+            print("Banco de dados: NETSPOT_DEFAULT_ADMIN_PASSWORD não configurada. Usuário admin padrão não será criado.")
             return
 
         if not db.query(User).filter(User.username == "admin").first():

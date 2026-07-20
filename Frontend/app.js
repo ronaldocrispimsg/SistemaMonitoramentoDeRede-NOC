@@ -1395,10 +1395,33 @@ function takeLast(items, limit = MAX_POINTS_PER_SERIES) {
 }
 
 function chartCommonOptions(yMin = null, yMax = null, yLabel = "") {
+    const isDark = document.documentElement.classList.contains("dark-theme");
+    const textColor = isDark ? "#94a3b8" : "#64748b";
+    const gridColor = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.06)";
+    const titleColor = isDark ? "#f9fafb" : "#0f172a";
+    
     const yScale = {
         title: {
             display: !!yLabel,
-            text: yLabel
+            text: yLabel,
+            color: titleColor,
+            font: {
+                family: "'Poppins', sans-serif",
+                size: 11,
+                weight: '600'
+            }
+        },
+        grid: {
+            color: gridColor,
+            drawBorder: false,
+            borderColor: gridColor
+        },
+        ticks: {
+            color: textColor,
+            font: {
+                family: "'Poppins', sans-serif",
+                size: 10
+            }
         }
     };
     if (yMin !== null && yMin !== undefined) yScale.min = yMin;
@@ -1407,9 +1430,54 @@ function chartCommonOptions(yMin = null, yMax = null, yLabel = "") {
     return {
         responsive: true,
         maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                labels: {
+                    color: textColor,
+                    font: {
+                        family: "'Poppins', sans-serif",
+                        size: 11,
+                        weight: '500'
+                    },
+                    boxWidth: 12,
+                    padding: 15
+                }
+            },
+            tooltip: {
+                backgroundColor: isDark ? "#1e293b" : "#ffffff",
+                titleColor: isDark ? "#f8fafc" : "#0f172a",
+                bodyColor: isDark ? "#94a3b8" : "#475569",
+                borderColor: isDark ? "#334155" : "#e2e8f0",
+                borderWidth: 1,
+                padding: 10,
+                titleFont: {
+                    family: "'Poppins', sans-serif",
+                    size: 12,
+                    weight: '600'
+                },
+                bodyFont: {
+                    family: "'Poppins', sans-serif",
+                    size: 11
+                },
+                cornerRadius: 6
+            }
+        },
         scales: {
             y: yScale,
-            x: {}
+            x: {
+                grid: {
+                    color: gridColor,
+                    drawBorder: false,
+                    borderColor: gridColor
+                },
+                ticks: {
+                    color: textColor,
+                    font: {
+                        family: "'Poppins', sans-serif",
+                        size: 10
+                    }
+                }
+            }
         }
     };
 }
@@ -2605,6 +2673,7 @@ if (logoutBtn) {
             const currentIsDark = document.documentElement.classList.toggle("dark-theme");
             localStorage.setItem("theme", currentIsDark ? "dark" : "light");
             updateThemeIcon(currentIsDark);
+            updateAllChartsTheme();
         });
     }
     
@@ -2628,5 +2697,57 @@ if (logoutBtn) {
             icon.removeAttribute("stroke-linejoin");
             icon.setAttribute("fill", "currentColor");
         }
+    }
+
+    function updateAllChartsTheme() {
+        if (typeof charts === "undefined" || !charts) return;
+        const currentIsDark = document.documentElement.classList.contains("dark-theme");
+        const textColor = currentIsDark ? "#94a3b8" : "#64748b";
+        const gridColor = currentIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.06)";
+        const titleColor = currentIsDark ? "#f9fafb" : "#0f172a";
+        
+        Object.values(charts).forEach(chart => {
+            if (!chart) return;
+            
+            // Scales Y
+            if (chart.options.scales?.y) {
+                if (chart.options.scales.y.title) {
+                    chart.options.scales.y.title.color = titleColor;
+                }
+                if (chart.options.scales.y.grid) {
+                    chart.options.scales.y.grid.color = gridColor;
+                    chart.options.scales.y.grid.borderColor = gridColor;
+                }
+                if (chart.options.scales.y.ticks) {
+                    chart.options.scales.y.ticks.color = textColor;
+                }
+            }
+            
+            // Scales X
+            if (chart.options.scales?.x) {
+                if (chart.options.scales.x.grid) {
+                    chart.options.scales.x.grid.color = gridColor;
+                    chart.options.scales.x.grid.borderColor = gridColor;
+                }
+                if (chart.options.scales.x.ticks) {
+                    chart.options.scales.x.ticks.color = textColor;
+                }
+            }
+            
+            // Legend
+            if (chart.options.plugins?.legend?.labels) {
+                chart.options.plugins.legend.labels.color = textColor;
+            }
+            
+            // Tooltip
+            if (chart.options.plugins?.tooltip) {
+                chart.options.plugins.tooltip.backgroundColor = currentIsDark ? "#1e293b" : "#ffffff";
+                chart.options.plugins.tooltip.titleColor = currentIsDark ? "#f8fafc" : "#0f172a";
+                chart.options.plugins.tooltip.bodyColor = currentIsDark ? "#94a3b8" : "#475569";
+                chart.options.plugins.tooltip.borderColor = currentIsDark ? "#334155" : "#e2e8f0";
+            }
+            
+            chart.update();
+        });
     }
 })();

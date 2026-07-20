@@ -251,7 +251,7 @@ async def _http_attempt(client: httpx.AsyncClient, url: str, timeout=1):
             url,
             timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": "NOC-Lite-Monitor"}
+            headers={"User-Agent": "NetSpot-Monitor"}
         )
         latency = round((time.time() - start) * 1000, 2)
         status_code = r.status_code
