@@ -17,6 +17,7 @@ class HostUpdate(BaseModel):
     http_url: Optional[str] = None
     http_enabled: Optional[bool] = None
     snmp_enabled: Optional[bool] = None
+    snmp_community: Optional[str] = "netspot"
 
 class HostCreate(BaseModel):
     name: str
@@ -27,6 +28,7 @@ class HostCreate(BaseModel):
     http_url: Optional[str] = None
     http_enabled: bool = True
     snmp_enabled: bool = False
+    snmp_community: Optional[str] = "netspot"
 
 
 class NetworkDiscoveryRequest(BaseModel):

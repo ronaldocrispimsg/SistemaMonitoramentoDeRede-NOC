@@ -124,21 +124,10 @@ window.addEventListener("DOMContentLoaded", async () => {
         const icon = document.getElementById("themeToggleIcon");
         if (!icon) return;
         if (isDarkState) {
-            // Desenhar ícone de Sol (Tema Escuro -> Clicar para mudar para Claro)
-            icon.innerHTML = `<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l-1.42 1.42"/>`;
-            icon.setAttribute("stroke", "currentColor");
-            icon.setAttribute("stroke-width", "2");
-            icon.setAttribute("stroke-linecap", "round");
-            icon.setAttribute("stroke-linejoin", "round");
-            icon.setAttribute("fill", "none");
-        } else {
-            // Desenhar ícone de Lua (Tema Claro -> Clicar para mudar para Escuro)
-            icon.innerHTML = `<path d="M12 3a9 9 0 109 9 9.75 9.75 0 00-.67-3.4 6.78 6.78 0 01-7.93-7.93A9.75 9.75 0 0012 3z"/>`;
+            icon.innerHTML = `<path d="M12 3a9 9 0 109 9 9.75 9.75 0 00-.67-3.4 6.78 6.78 0 01-7.93-7.93A9.75 9.75 0 0012 3z" fill="currentColor"/>`;
             icon.removeAttribute("stroke");
-            icon.removeAttribute("stroke-width");
-            icon.removeAttribute("stroke-linecap");
-            icon.removeAttribute("stroke-linejoin");
-            icon.setAttribute("fill", "currentColor");
+        } else {
+            icon.innerHTML = `<circle cx="12" cy="12" r="4" fill="#f9ab00"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="#f9ab00" stroke-width="2" stroke-linecap="round"/>`;
         }
     }
 })();

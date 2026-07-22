@@ -3,35 +3,35 @@ BASE
 ========================= */
 
 :root {
-    --bg-main: #f8fafc;
+    --bg-main: #f8f9fa;
     --bg-panel: #ffffff;
-    --bg-soft: #f1f5f9;
-    --text-main: #0f172a;
-    --text-soft: #475569;
-    --line: #e2e8f0;
-    --primary: #3b82f6;
-    --primary-dark: #2563eb;
-    --danger: #ef4444;
-    --success: #10b981;
-    --warning: #f59e0b;
-    --gradient-1: #efefef;
-    --gradient-2: #e7e7e7;
+    --bg-soft: #f1f3f4;
+    --text-main: #202124;
+    --text-soft: #5f6368;
+    --line: #dadce0;
+    --primary: #1a73e8;
+    --primary-dark: #1557b0;
+    --danger: #d93025;
+    --success: #1e8e3e;
+    --warning: #f9ab00;
+    --gradient-1: #ffffff;
+    --gradient-2: #f8f9fa;
 }
 
 .dark-theme {
-    --bg-main: #0b0f19;
-    --bg-panel: #111827;
-    --bg-soft: #1f2937;
-    --text-main: #f9fafb;
-    --text-soft: #9ca3af;
-    --line: #374151;
-    --primary: #60a5fa;
-    --primary-dark: #3b82f6;
-    --danger: #f87171;
-    --success: #34d399;
-    --warning: #fbbf24;
-    --gradient-1: #1e1b4b;
-    --gradient-2: #0f172a;
+    --bg-main: #202124;
+    --bg-panel: #2d2e30;
+    --bg-soft: #3c4043;
+    --text-main: #e8eaed;
+    --text-soft: #9aa0a6;
+    --line: #3c4043;
+    --primary: #8ab4f8;
+    --primary-dark: #669df6;
+    --danger: #f28b82;
+    --success: #81c995;
+    --warning: #fde293;
+    --gradient-1: #202124;
+    --gradient-2: #2d2e30;
 }
 
 
@@ -40,7 +40,7 @@ BASE
 }
 
 body {
-    font-family: "Poppins", "Segoe UI", sans-serif;
+    font-family: "Open Sans", "Roboto", "Segoe UI", sans-serif;
     background:
         radial-gradient(circle at 0% 0%, var(--gradient-1) 0%, transparent 32%),
         radial-gradient(circle at 100% 0%, var(--gradient-2) 0%, transparent 28%),
@@ -64,9 +64,9 @@ LOGIN
 .login-box {
     width: min(420px, 92vw);
     background: var(--bg-panel);
-    padding: 28px 24px;
-    border-radius: 10px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    padding: 32px 28px;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
     text-align: center;
     color: var(--text-main);
 }
@@ -85,22 +85,34 @@ LOGIN
 .login-box input {
     width: 100%;
     margin: 8px 0;
-    padding: 10px;
-    border-radius: 6px;
+    padding: 11px 14px;
+    border-radius: 8px;
     border: 1px solid var(--line);
-    background: var(--bg-soft);
+    background: var(--bg-panel);
     color: var(--text-main);
+    font-family: inherit;
+    font-size: 0.9rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.login-box input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary);
+    outline: none;
 }
 
 .login-box button {
     width: 100%;
-    margin-top: 10px;
-    padding: 10px;
-    border-radius: 6px;
+    margin-top: 14px;
+    padding: 10px 24px;
+    border-radius: 20px;
     border: none;
     background: var(--primary);
     color: white;
-    font-weight: bold;
+    font-family: inherit;
+    font-weight: 500;
+    font-size: 0.9rem;
+    letter-spacing: 0.25px;
     cursor: pointer;
 }
 
@@ -132,10 +144,10 @@ LAYOUT DASHBOARD
     position: sticky;
     top: 0;
     z-index: 55;
-    background: rgba(248, 250, 252, 0.96);
-    backdrop-filter: blur(4px);
-    border-bottom: 1px solid #d7dee8;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 1px 2px 0 rgba(60,64,67,0.06), 0 2px 6px 2px rgba(60,64,67,0.03);
 }
 
 .app-topbar-inner {
@@ -200,13 +212,13 @@ LAYOUT DASHBOARD
 }
 
 .summary-card small {
-    color: #64748b;
+    color: var(--text-soft);
     font-size: 0.72rem;
     line-height: 1.1;
 }
 
 .summary-card strong {
-    color: #111827;
+    color: var(--text-main);
     font-size: 1rem;
     line-height: 1.1;
     font-weight: 700;
@@ -258,9 +270,15 @@ select:focus {
 }
 
 button {
-    padding: 8px 12px;
+    padding: 8px 20px;
     cursor: pointer;
-    transition: all .2s ease;
+    border-radius: 20px;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.25px;
+    transition: background-color 0.2s, box-shadow 0.2s, transform 0.1s;
+    border: 1px solid transparent;
 }
 
 #hostForm {
@@ -273,10 +291,9 @@ button {
 #hostForm button {
     grid-column: span 4;
     border: none;
-    border-radius: 8px;
+    border-radius: 20px;
     background: var(--primary);
     color: #fff;
-    font-weight: 600;
 }
 
 #hostForm button:hover {
@@ -311,7 +328,7 @@ button {
 
 .network-discovery-info {
     margin: 8px 4px 6px;
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.85rem;
 }
 
@@ -345,13 +362,13 @@ button {
 }
 
 .network-discovery-meta small {
-    color: #64748b;
+    color: var(--text-soft);
 }
 
 .network-exists-badge {
     display: inline-block;
     border: 1px solid #cbd5e1;
-    color: #64748b;
+    color: var(--text-soft);
     background: #f1f5f9;
     border-radius: 999px;
     padding: 2px 8px;
@@ -377,7 +394,7 @@ button {
 
 .network-import-result {
     margin: 8px 4px 0;
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.85rem;
 }
 
@@ -385,7 +402,7 @@ button {
     border: 1px solid #dbe2ea;
     border-radius: 8px;
     background: #ffffff;
-    color: #334155;
+    color: var(--text-main);
     padding: 10px 12px;
     font-size: 0.86rem;
     line-height: 1.35;
@@ -398,7 +415,7 @@ button {
 .ui-state.ui-state-info {
     background: #f8fafc;
     border-color: #dbe2ea;
-    color: #475569;
+    color: var(--text-soft);
 }
 
 .ui-state.ui-state-success {
@@ -422,7 +439,7 @@ button {
 .ui-state.ui-state-empty {
     background: #f8fafc;
     border-style: dashed;
-    color: #64748b;
+    color: var(--text-soft);
 }
 
 .menu-trigger-btn {
@@ -437,7 +454,7 @@ button {
     border: 1px solid #d7dee8;
     border-radius: 8px;
     background: #f8fafc;
-    color: #334155;
+    color: var(--text-main);
     text-decoration: none;
     font-size: 0.82rem;
     font-weight: 600;
@@ -502,7 +519,7 @@ button {
     border: 1px solid #d7dee8;
     border-radius: 8px;
     background: #f8fafc;
-    color: #334155;
+    color: var(--text-main);
     font-weight: 600;
     text-align: left;
     display: flex;
@@ -531,7 +548,7 @@ button {
     text-transform: uppercase;
     letter-spacing: .02em;
     background: #f8fafc;
-    color: #475569;
+    color: var(--text-soft);
 }
 
 .host-monitor-flag.running {
@@ -542,7 +559,7 @@ button {
 
 .host-monitor-flag.paused {
     border-color: #cbd5e1;
-    color: #475569;
+    color: var(--text-soft);
     background: #f8fafc;
 }
 
@@ -595,7 +612,7 @@ button {
     border: 1px solid #d7dee8;
     border-radius: 6px;
     background: #f8fafc;
-    color: #334155;
+    color: var(--text-main);
     width: 28px;
     height: 28px;
     padding: 0;
@@ -625,7 +642,7 @@ button {
     border: 1px solid #d7dee8;
     border-radius: 6px;
     background: #f8fafc;
-    color: #334155;
+    color: var(--text-main);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -707,13 +724,13 @@ a:focus-visible {
     gap: 10px;
     flex-wrap: wrap;
     margin-top: 6px;
-    color: #64748b;
+    color: var(--text-soft);
 }
 
 .incident-row-reason {
     margin-top: 6px;
     font-size: 0.85rem;
-    color: #334155;
+    color: var(--text-main);
 }
 
 .ports-field {
@@ -730,7 +747,7 @@ a:focus-visible {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 6px;
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.85rem;
     font-weight: 600;
 }
@@ -738,17 +755,17 @@ a:focus-visible {
 .ports-help {
     display: block;
     margin: 0 0 6px 0;
-    color: #64748b;
+    color: var(--text-soft);
     font-size: 0.75rem;
 }
 
 .add-port-btn {
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #ffffff;
-    color: #475569;
-    width: 26px;
-    height: 26px;
+    border: none;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #ffffff;
+    width: 24px;
+    height: 24px;
     padding: 0;
     font-size: 1rem;
     font-weight: 700;
@@ -756,10 +773,13 @@ a:focus-visible {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, background-color 0.2s ease;
 }
 
 .add-port-btn:hover {
-    background: #eef2f7;
+    background: var(--primary-dark);
+    transform: scale(1.08);
 }
 
 .ports-container {
@@ -780,22 +800,26 @@ a:focus-visible {
 }
 
 .remove-port-btn {
-    border: 1px solid #d7dee8;
-    border-radius: 6px;
-    background: #ffffff;
-    color: #64748b;
-    width: 26px;
-    height: 26px;
+    border: none;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #ffffff;
+    width: 24px;
+    height: 24px;
     padding: 0;
+    font-size: 1rem;
+    font-weight: 700;
     line-height: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, background-color 0.2s ease;
 }
 
 .remove-port-btn:hover {
-    background: #f1f5f9;
-    color: #334155;
+    background: var(--primary-dark);
+    transform: scale(1.08);
 }
 
 .tcp-ports-section {
@@ -824,19 +848,19 @@ a:focus-visible {
 }
 
 .tcp-port-label {
-    color: #334155;
+    color: var(--text-main);
     font-size: 0.82rem;
     font-weight: 600;
 }
 
 .tcp-port-meta {
     margin-left: auto;
-    color: #64748b;
+    color: var(--text-soft);
     font-size: 0.78rem;
 }
 
 .tcp-ports-empty {
-    color: #64748b;
+    color: var(--text-soft);
     font-size: 0.78rem;
 }
 
@@ -844,7 +868,7 @@ a:focus-visible {
     display: flex;
     align-items: center;
     gap: 10px;
-    color: #334155;
+    color: var(--text-main);
     font-size: 0.9rem;
     margin: 4px;
 }
@@ -907,12 +931,12 @@ a:focus-visible {
 
 .snmp-enable-text strong {
     font-size: 0.9rem;
-    color: #334155;
+    color: var(--text-main);
 }
 
 .snmp-enable-text small {
     font-size: 0.75rem;
-    color: #64748b;
+    color: var(--text-soft);
 }
 
 .snmp-enable-switch input[type="checkbox"]:checked+.snmp-switch {
@@ -1011,7 +1035,7 @@ BOTÕES SUPERIORES
     border: 1px solid #d7dee8;
     border-radius: 6px;
     background: #f8fafc;
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
@@ -1067,7 +1091,7 @@ BOTÕES SUPERIORES
 }
 
 .trash-meta small {
-    color: #64748b;
+    color: var(--text-soft);
     overflow-wrap: anywhere;
 }
 
@@ -1253,7 +1277,7 @@ CARDS HOST
 }
 
 .host-addr {
-    color: #64748b;
+    color: var(--text-soft);
     overflow-wrap: anywhere;
 }
 
@@ -1332,13 +1356,13 @@ CARDS HOST
 }
 
 .host-meta-item small {
-    color: #64748b;
+    color: var(--text-soft);
     font-size: 0.74rem;
     overflow-wrap: anywhere;
 }
 
 .host-meta-item strong {
-    color: #334155;
+    color: var(--text-main);
     font-size: 0.82rem;
     font-weight: 600;
     overflow-wrap: anywhere;
@@ -1353,7 +1377,7 @@ CARDS HOST
 .metrics-title {
     font-weight: bold;
     margin-bottom: 6px;
-    color: #334155;
+    color: var(--text-main);
     font-size: 0.86rem;
 }
 
@@ -1373,7 +1397,7 @@ CARDS HOST
 }
 
 .host-summary-list small {
-    color: #475569;
+    color: var(--text-soft);
     line-height: 1.25;
 }
 
@@ -1396,7 +1420,7 @@ CARDS HOST
 .web-check-off {
     background: #f8fafc;
     border-color: #cbd5e1;
-    color: #475569;
+    color: var(--text-soft);
 }
 
 .cause-pill {
@@ -1411,7 +1435,7 @@ CARDS HOST
 }
 
 .cause-pill.cause-normal {
-    color: #334155;
+    color: var(--text-main);
     border-color: #dbe2ea;
     background: #f8fafc;
 }
@@ -1465,14 +1489,14 @@ CARDS HOST
 .snmp-title {
     font-weight: 700;
     font-size: 0.92rem;
-    color: #334155;
+    color: var(--text-main);
     line-height: 1.1;
 }
 
 .snmp-subtitle {
     margin-top: 2px;
     font-size: 0.76rem;
-    color: #64748b;
+    color: var(--text-soft);
 }
 
 /* Linha superior de mini-cards (CPU / RAM / Disco) */
@@ -1516,7 +1540,7 @@ CARDS HOST
 }
 
 .snmp-kpi-label {
-    color: #475569;
+    color: var(--text-soft);
     text-align: left;
     line-height: 1.15;
     flex: 1 1 auto;
@@ -1534,7 +1558,7 @@ CARDS HOST
     font-weight: 700;
     font-size: 0.8rem;
     line-height: 1.1;
-    color: #334155;
+    color: var(--text-main);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: clip;
@@ -1592,14 +1616,14 @@ CARDS HOST
 
 .snmp-traffic-label {
     font-size: 0.76rem;
-    color: #475569;
+    color: var(--text-soft);
     text-align: left;
     white-space: nowrap;
 }
 
 .snmp-traffic-value {
     font-size: 0.76rem;
-    color: #334155;
+    color: var(--text-main);
     text-align: right;
     white-space: nowrap;
 }
@@ -1702,7 +1726,7 @@ BOTÕES DOS CARDS
     border-radius: 6px;
     border: 1px solid #d7dee8;
     background: #f9fafb;
-    color: #475569;
+    color: var(--text-soft);
     font-weight: 500;
 }
 
@@ -1771,7 +1795,7 @@ HISTÓRICO
 .chart-title {
     font-size: 0.83rem;
     font-weight: 700;
-    color: #334155;
+    color: var(--text-main);
     margin-bottom: 8px;
     letter-spacing: .01em;
 }
@@ -1791,7 +1815,7 @@ HISTÓRICO
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #64748b;
+    color: var(--text-soft);
     font-size: 0.86rem;
     border: 1px dashed #d7dee8;
     border-radius: 10px;
@@ -1802,7 +1826,7 @@ HISTÓRICO
 
 .history-line {
     background: #ffffff;
-    color: #0f172a;
+    color: var(--text-main);
     padding: 8px 10px;
     border-radius: 8px;
     border: 1px solid #dde5ef;
@@ -1830,18 +1854,18 @@ HISTÓRICO
     font-weight: 700;
     letter-spacing: .02em;
     border: 1px solid #c8d3e0;
-    color: #334155;
+    color: var(--text-main);
     background: #f8fafc;
 }
 
 .history-time {
     margin-left: auto;
-    color: #64748b;
+    color: var(--text-soft);
     font-size: 0.74rem;
 }
 
 .history-detail {
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.78rem;
     line-height: 1.25;
     display: block;
@@ -1868,7 +1892,7 @@ HISTÓRICO
 }
 
 .type-badge {
-    color: #475569;
+    color: var(--text-soft);
     font-weight: 700;
     background: #edf2f7;
     border: 1px solid #d4dde8;
@@ -1910,13 +1934,13 @@ TOASTS
 }
 
 .toast {
-    border: 1px solid #dbe2ea;
-    border-left: 4px solid #94a3b8;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--primary);
     border-radius: 8px;
-    background: #ffffff;
-    color: #0f172a;
-    padding: 10px 12px;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+    background: var(--bg-panel);
+    color: var(--text-main);
+    padding: 10px 14px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
     font-size: 0.88rem;
     line-height: 1.35;
     opacity: 0;
@@ -1948,12 +1972,12 @@ TOASTS
 }
 
 .toast-info {
-    border-left-color: #64748b;
+    border-left-color: var(--text-soft);
 }
 
 .alert-card {
     background: #ffffff;
-    color: #0f172a;
+    color: var(--text-main);
     padding: 12px;
     border-radius: 8px;
     border: 1px solid #dbe2ea;
@@ -1993,7 +2017,7 @@ TOASTS
 .alert-subtitle {
     margin-top: 4px;
     font-size: 0.78rem;
-    color: #64748b;
+    color: var(--text-soft);
 }
 
 @keyframes slideIn {
@@ -2142,7 +2166,7 @@ TIMELINE INCIDENTES
 }
 
 .timeline-host {
-    color: #0f172a;
+    color: var(--text-main);
     font-size: 0.92rem;
 }
 
@@ -2183,13 +2207,13 @@ TIMELINE INCIDENTES
 }
 
 .timeline-item-meta small {
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.78rem;
 }
 
 .timeline-reason {
     margin: 7px 0 0 0;
-    color: #334155;
+    color: var(--text-main);
     font-size: 0.83rem;
     line-height: 1.35;
 }
@@ -2199,7 +2223,7 @@ TIMELINE INCIDENTES
     background: #ffffff;
     border-radius: 8px;
     padding: 14px;
-    color: #64748b;
+    color: var(--text-soft);
     text-align: center;
 }
 
@@ -2250,7 +2274,7 @@ input[type=number] {
 }
 
 .metric-neutral {
-    color: #475569;
+    color: var(--text-soft);
     font-weight: bold;
 }
 
@@ -2647,9 +2671,9 @@ input[type=number] {
    ========================================================================== */
 
 .dark-theme .app-topbar {
-    background: rgba(17, 24, 39, 0.96) !important;
+    background: rgba(45, 46, 48, 0.96) !important;
     border-bottom-color: var(--line) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+    box-shadow: none !important;
 }
 
 .dark-theme .summary-card,
@@ -2831,4 +2855,349 @@ input[type=number] {
 
 .dark-theme .incident-row-meta {
     color: var(--text-soft) !important;
+}
+
+/* ==========================================================================
+   NETSPOT PREMIUM DARK THEME CONTRAST & STATUS STRIPE IMPROVEMENTS
+   ========================================================================== */
+
+/* 1. Restaura a listra de status lateral colorida nos cards de host no tema escuro */
+.dark-theme .card.card-state-up {
+    border-left: 4px solid var(--success) !important;
+    background: linear-gradient(180deg, var(--bg-panel) 0%, rgba(129, 201, 149, 0.04) 100%) !important;
+}
+.dark-theme .card.card-state-degraded {
+    border-left: 4px solid var(--warning) !important;
+    background: linear-gradient(180deg, var(--bg-panel) 0%, rgba(253, 226, 147, 0.04) 100%) !important;
+}
+.dark-theme .card.card-state-down {
+    border-left: 4px solid var(--danger) !important;
+    background: linear-gradient(180deg, var(--bg-panel) 0%, rgba(242, 139, 130, 0.04) 100%) !important;
+}
+.dark-theme .card.card-state-critical {
+    border-left: 4px solid var(--danger) !important;
+    background: linear-gradient(180deg, var(--bg-panel) 0%, rgba(242, 139, 130, 0.04) 100%) !important;
+}
+
+/* 2. Melhora a visibilidade e o contraste das fontes no tema escuro dentro dos cards */
+.dark-theme .host-title {
+    color: var(--text-main) !important;
+}
+.dark-theme .host-addr {
+    color: var(--text-soft) !important;
+}
+.dark-theme .host-meta-item small {
+    color: var(--text-soft) !important;
+    font-weight: 500;
+}
+.dark-theme .host-meta-item strong {
+    color: var(--text-main) !important;
+}
+.dark-theme .metrics-title {
+    color: var(--text-main) !important;
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+}
+.dark-theme .host-summary-list small,
+.dark-theme .network-split small,
+.dark-theme .host-checks-section small,
+.dark-theme .tcp-ports-section small {
+    color: var(--text-soft) !important;
+}
+.dark-theme .host-summary-list small b,
+.dark-theme .network-split small b,
+.dark-theme .host-checks-section small b,
+.dark-theme .tcp-ports-section small b {
+    color: var(--text-main) !important;
+    font-weight: 600;
+}
+
+/* 3. Ajuste do contraste do box de sucesso e erros da descoberta de rede */
+.dark-theme .ui-state.ui-state-success {
+    background: rgba(129, 201, 149, 0.12) !important;
+    border-color: var(--success) !important;
+    color: #81c995 !important;
+    font-weight: 500;
+}
+.dark-theme .ui-state.ui-state-warning {
+    background: rgba(253, 226, 147, 0.12) !important;
+    border-color: var(--warning) !important;
+    color: #fde293 !important;
+    font-weight: 500;
+}
+.dark-theme .ui-state.ui-state-error {
+    background: rgba(242, 139, 130, 0.12) !important;
+    border-color: var(--danger) !important;
+    color: #f28b82 !important;
+    font-weight: 500;
+}
+
+/* 4. Estilos globais e de tema escuro para placeholders de inputs */
+input::placeholder,
+select::placeholder,
+textarea::placeholder {
+    color: var(--text-soft);
+    opacity: 0.7;
+}
+
+.dark-theme input::placeholder,
+.dark-theme select::placeholder,
+.dark-theme textarea::placeholder {
+    color: var(--text-soft) !important;
+    opacity: 0.65 !important;
+}
+
+/* 5. Correção do contraste de textos nos cards de resumo (summary-card) */
+.dark-theme .summary-card small {
+    color: var(--text-soft) !important;
+}
+.dark-theme .summary-card strong {
+    color: var(--text-main) !important;
+}
+
+/* 6. Correção do contraste da seção de Portas TCP (ports-field) */
+.dark-theme .ports-field-head {
+    color: var(--text-main) !important;
+}
+.dark-theme .ports-help {
+    color: var(--text-soft) !important;
+}
+
+/* 7. Correção do fundo branco dos gráficos (canvas) no tema escuro */
+.dark-theme .chart-box canvas {
+    background: transparent !important;
+    border-color: var(--line) !important;
+}
+
+/* 8. Notificações Toast no Tema Escuro */
+.dark-theme .toast {
+    background: var(--bg-panel) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark-theme .toast-success {
+    border-left-color: var(--success) !important;
+}
+
+.dark-theme .toast-error {
+    border-left-color: var(--danger) !important;
+}
+
+.dark-theme .toast-warning {
+    border-left-color: var(--warning) !important;
+}
+
+.dark-theme .toast-info {
+    border-left-color: var(--primary) !important;
+}
+
+/* 9. Revisão geral e polimento de componentes secundários no tema escuro */
+.dark-theme select option {
+    background-color: var(--bg-panel) !important;
+    color: var(--text-main) !important;
+}
+
+/* Bordas definidas para todos os inputs e caixas de portas TCP no tema escuro */
+.dark-theme input,
+.dark-theme select,
+.dark-theme textarea {
+    background: var(--bg-panel) !important;
+    color: var(--text-main) !important;
+    border: 1px solid #5f6368 !important;
+}
+
+.dark-theme input:focus,
+.dark-theme select:focus,
+.dark-theme textarea:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 1px var(--primary) !important;
+}
+
+.dark-theme .ports-field {
+    background: var(--bg-panel) !important;
+    border: 1px solid #5f6368 !important;
+}
+
+.dark-theme .host-last-checks,
+.dark-theme .tcp-ports-status,
+.dark-theme .network-discovery-list {
+    background: var(--bg-soft) !important;
+    border-color: #5f6368 !important;
+    color: var(--text-main) !important;
+}
+
+.dark-theme .network-discovery-item {
+    background: var(--bg-panel) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+/* Botões dos cartões dos hosts e navegação de faces escurecidos */
+.dark-theme .icon-btn,
+.dark-theme .face-nav-btn,
+.dark-theme .icon-actions button {
+    background: var(--bg-soft) !important;
+    border: 1px solid var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+.dark-theme .icon-btn:hover,
+.dark-theme .face-nav-btn:hover,
+.dark-theme .icon-actions button:hover {
+    background: var(--bg-panel) !important;
+    border-color: var(--primary) !important;
+    color: var(--primary) !important;
+}
+
+.dark-theme .icon-btn svg,
+.dark-theme .face-nav-btn svg {
+    stroke: currentColor !important;
+}
+
+/* Badge de monitoramento (MONITORANDO) no tema escuro */
+.dark-theme .host-monitor-flag.running {
+    background: rgba(129, 201, 149, 0.15) !important;
+    border-color: var(--success) !important;
+    color: #81c995 !important;
+}
+.dark-theme .host-monitor-flag.paused {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+    color: var(--text-soft) !important;
+}
+.dark-theme .host-monitor-flag.down {
+    background: rgba(242, 139, 130, 0.15) !important;
+    border-color: var(--danger) !important;
+    color: #f28b82 !important;
+}
+.dark-theme .host-monitor-flag.degraded {
+    background: rgba(253, 226, 147, 0.15) !important;
+    border-color: var(--warning) !important;
+    color: #fde293 !important;
+}
+
+/* 10. Menu Lateral (Sidebar / Conta) no Tema Escuro */
+.dark-theme .sidebar-menu {
+    background: var(--bg-panel) !important;
+    border-right-color: var(--line) !important;
+    color: var(--text-main) !important;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark-theme .sidebar-header strong {
+    color: var(--text-main) !important;
+}
+
+.dark-theme .sidebar-actions button {
+    background: var(--bg-soft) !important;
+    border: 1px solid var(--line) !important;
+    color: var(--text-main) !important;
+    border-radius: 20px !important;
+}
+
+.dark-theme .sidebar-actions button:hover {
+    background: var(--bg-panel) !important;
+    border-color: var(--primary) !important;
+    color: var(--primary) !important;
+}
+
+.dark-theme .sidebar-actions button svg {
+    fill: currentColor !important;
+    stroke: currentColor !important;
+}
+
+/* 11. Botão de Alternância de Tema em Formato de Chave (Pill Toggle Switch) */
+.theme-switch-pill {
+    position: relative;
+    width: 64px;
+    height: 32px;
+    border-radius: 24px;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 7px;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+    user-select: none;
+    box-sizing: border-box;
+}
+
+.theme-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease, color 0.3s ease;
+    color: #f9ab00;
+}
+
+.theme-switch-icon-sun {
+    width: 15px;
+    height: 15px;
+    color: #f9ab00;
+    opacity: 0.4;
+    transition: opacity 0.3s ease;
+}
+
+.theme-switch-icon-moon {
+    width: 15px;
+    height: 15px;
+    color: #8ab4f8;
+    opacity: 0.4;
+    transition: opacity 0.3s ease;
+}
+
+.dark-theme .theme-switch-pill {
+    background: #3c4043;
+    border-color: #5f6368;
+}
+
+.dark-theme .theme-switch-thumb {
+    transform: translateX(32px);
+    background: #8ab4f8;
+    color: #202124;
+}
+
+.dark-theme .theme-switch-icon-moon {
+    opacity: 0.9;
+}
+
+:not(.dark-theme) .theme-switch-icon-sun {
+    opacity: 0.9;
+}
+
+/* 12. Polimento final: Timeline de Incidentes, Cards SNMP e Botão Adicionar Porta */
+.dark-theme .timeline-item,
+.dark-theme .timeline-empty {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
+}
+
+.dark-theme .timeline-item-open {
+    border-left-color: var(--danger) !important;
+}
+
+.dark-theme .timeline-item-closed {
+    border-left-color: var(--success) !important;
+}
+
+.dark-theme .snmp-kpi-card,
+.dark-theme .snmp-traffic-panel {
+    background: var(--bg-soft) !important;
+    border-color: var(--line) !important;
+    color: var(--text-main) !important;
 }

@@ -375,15 +375,21 @@ async def update_host_snmp(host, db):
         "network": None
     }
 
-    comm = (host.snmp_community or "public").strip() or "public"
+    comm = (host.snmp_community or "netspot").strip() or "netspot"
     ip = host.address
 
-    # CPU % real -> 100 - idle
-    cpu_idle = await get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.11.11.0")
-    if cpu_idle is not None:
-        idle = float(cpu_idle)
-        data["cpu"] = round(100 - idle, 2)
-        host.cpu_usage = data["cpu"]
+    # Resolucao de CPU OID via OID Resolver resiliente
+    try:
+        from Backend.snmp.oid_resolver import resolve_cpu_oid
+        cpu_oid = await resolve_cpu_oid(host.id, ip, comm)
+        if cpu_oid:
+            cpu_idle = await get_snmp_value(ip, comm, cpu_oid)
+            if cpu_idle is not None:
+                idle = float(cpu_idle)
+                data["cpu"] = round(100 - idle, 2)
+                host.cpu_usage = data["cpu"]
+    except Exception as e:
+        print(f"[SNMP CPU RESOLVER WARNING] host={host.name}: {e}")
 
     ram_total = await get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.5.0")
     ram_free = await get_snmp_value(ip, comm, "1.3.6.1.4.1.2021.4.6.0")
