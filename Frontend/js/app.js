@@ -1573,10 +1573,10 @@ function takeLast(items, limit = MAX_POINTS_PER_SERIES) {
 }
 
 function chartCommonOptions(yMin = null, yMax = null, yLabel = "") {
-    const isDark = document.documentElement.classList.contains("dark-theme");
-    const textColor = isDark ? "#94a3b8" : "#64748b";
+    const isDark = document.body.classList.contains("dark-theme") || document.documentElement.classList.contains("dark-theme");
+    const textColor = isDark ? "#cbd5e1" : "#64748b";
     const gridColor = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.06)";
-    const titleColor = isDark ? "#f9fafb" : "#0f172a";
+    const titleColor = isDark ? "#f8fafc" : "#0f172a";
     
     const yScale = {
         title: {
@@ -1919,7 +1919,7 @@ async function loadSnmpChart(name) {
     }
     clearChartEmpty(boxId, canvasId);
 
-    const isDark = document.documentElement.classList.contains("dark-theme");
+    const isDark = document.body.classList.contains("dark-theme") || document.documentElement.classList.contains("dark-theme");
     const cpuColor = isDark ? "#f28b82" : "#ea4335";
     const ramColor = isDark ? "#fde293" : "#fbbc05";
     const diskColor = isDark ? "#ffad70" : "#fa7b17";
@@ -2057,7 +2057,7 @@ async function loadAvailabilityChartType(name) {
     }
     clearChartEmpty("availability-chart-type-box-" + name, "availability-chart-type-" + name);
 
-    const isDark = document.documentElement.classList.contains("dark-theme");
+    const isDark = document.body.classList.contains("dark-theme") || document.documentElement.classList.contains("dark-theme");
     const pingColor = isDark ? "#81c995" : "#1e8e3e";
     const tcpColor = isDark ? "#8ab4f8" : "#1a73e8";
     const httpColor = isDark ? "#fde293" : "#f9ab00";
@@ -2587,7 +2587,7 @@ async function loadAvailability(name) {
         }
         clearChartEmpty("availability-chart-box-" + name, "availability-chart-" + name);
 
-        const isDark = document.documentElement.classList.contains("dark-theme");
+        const isDark = document.body.classList.contains("dark-theme") || document.documentElement.classList.contains("dark-theme");
         const availColor = isDark ? "#81c995" : "#1e8e3e";
 
         updateOrCreateChart(chartKey, ctx, {
@@ -2877,6 +2877,7 @@ if (logoutBtn) {
     if (themeToggleBtn) {
         themeToggleBtn.addEventListener("click", () => {
             const currentIsDark = document.documentElement.classList.toggle("dark-theme");
+            document.body.classList.toggle("dark-theme", currentIsDark);
             localStorage.setItem("theme", currentIsDark ? "dark" : "light");
             updateThemeIcon(currentIsDark);
             updateAllChartsTheme();
@@ -2896,7 +2897,7 @@ if (logoutBtn) {
 
     function updateAllChartsTheme() {
         if (typeof charts === "undefined" || !charts) return;
-        const currentIsDark = document.documentElement.classList.contains("dark-theme");
+        const currentIsDark = document.body.classList.contains("dark-theme") || document.documentElement.classList.contains("dark-theme");
         const textColor = currentIsDark ? "#94a3b8" : "#64748b";
         const gridColor = currentIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.06)";
         const titleColor = currentIsDark ? "#f9fafb" : "#0f172a";

@@ -807,6 +807,10 @@ async def trim_history(db, host_id, check_type, limit=500):
 async def cleanup_old_data():
     async with AsyncSessionLocal() as db:
         try:
+            from Backend.services.retention_service import purge_old_data
+            stats = await purge_old_data(db)
+            logger.info(f"[RETENÇÃO DE DADOS] Limpeza executada com base no NETSPOT_RETENTION_DAYS ({stats['retention_days']} dias): {stats['check_results']} checks, {stats['snmp_metrics']} snmp removidos.")
+
             stmt = select(Host)
             res = await db.execute(stmt)
             hosts = res.scalars().all()

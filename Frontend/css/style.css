@@ -2880,38 +2880,115 @@ input[type=number] {
 }
 
 /* 2. Melhora a visibilidade e o contraste das fontes no tema escuro dentro dos cards */
-.dark-theme .host-title {
-    color: var(--text-main) !important;
+.dark-theme .card,
+.dark-theme .host-card {
+    background-color: #22242a !important;
+    border-color: #373a43 !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
 }
-.dark-theme .host-addr {
-    color: var(--text-soft) !important;
+
+.dark-theme .host-title,
+.dark-theme .snmp-title {
+    color: #f8fafc !important;
+    font-weight: 700 !important;
 }
-.dark-theme .host-meta-item small {
-    color: var(--text-soft) !important;
-    font-weight: 500;
+.dark-theme .host-addr,
+.dark-theme .snmp-subtitle {
+    color: #94a3b8 !important;
+    font-weight: 500 !important;
 }
-.dark-theme .host-meta-item strong {
-    color: var(--text-main) !important;
+.dark-theme .host-meta-item,
+.dark-theme .snmp-kpi-card,
+.dark-theme .snmp-traffic-panel {
+    background-color: #2b2e36 !important;
+    border: 1px solid #3d424e !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
 }
-.dark-theme .metrics-title {
-    color: var(--text-main) !important;
-    font-weight: 600;
-    border-bottom: 1px solid var(--line);
+.dark-theme .host-meta-item small,
+.dark-theme .snmp-kpi-label,
+.dark-theme .snmp-traffic-label {
+    color: #94a3b8 !important;
+    font-weight: 600 !important;
+    font-size: 0.76rem !important;
+}
+.dark-theme .host-meta-item strong,
+.dark-theme .snmp-kpi-value,
+.dark-theme .snmp-traffic-value {
+    color: #ffffff !important;
+    font-weight: 700 !important;
+}
+.dark-theme .metrics-title,
+.dark-theme .chart-title {
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+    border-bottom: 1px solid #373a43 !important;
     padding-bottom: 4px;
     margin-bottom: 8px;
 }
 .dark-theme .host-summary-list small,
 .dark-theme .network-split small,
 .dark-theme .host-checks-section small,
-.dark-theme .tcp-ports-section small {
-    color: var(--text-soft) !important;
+.dark-theme .tcp-ports-section small,
+.dark-theme .snmp-section small {
+    color: #94a3b8 !important;
 }
 .dark-theme .host-summary-list small b,
 .dark-theme .network-split small b,
 .dark-theme .host-checks-section small b,
-.dark-theme .tcp-ports-section small b {
-    color: var(--text-main) !important;
-    font-weight: 600;
+.dark-theme .tcp-ports-section small b,
+.dark-theme .snmp-section small b,
+.dark-theme .snmp-metric-value {
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+.dark-theme .snmp-bar-bg,
+.dark-theme progress,
+.dark-theme .snmp-kpi-bar,
+.dark-theme .snmp-mini-bar {
+    background-color: #373c47 !important;
+}
+
+/* 2b. Estilização do Histórico no Tema Escuro (Face 2 do Card) */
+.dark-theme .history-box,
+.dark-theme .host-history-scroll {
+    background-color: #22242a !important;
+    border-color: #373a43 !important;
+}
+
+.dark-theme .history-line {
+    background-color: #2b2e36 !important;
+    border-color: #3d424e !important;
+    color: #f8fafc !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+.dark-theme .history-time {
+    color: #94a3b8 !important;
+    font-weight: 500 !important;
+}
+
+.dark-theme .history-detail {
+    color: #cbd5e1 !important;
+}
+
+.dark-theme .history-type-tag,
+.dark-theme .history-tag {
+    background-color: #373c47 !important;
+    border: 1px solid #484e5c !important;
+    color: #cbd5e1 !important;
+}
+
+.dark-theme .line-success .history-status {
+    background: rgba(34, 197, 94, 0.15) !important;
+    border-color: #4ade80 !important;
+    color: #4ade80 !important;
+}
+
+.dark-theme .line-error .history-status {
+    background: rgba(239, 68, 68, 0.15) !important;
+    border-color: #f87171 !important;
+    color: #f87171 !important;
 }
 
 /* 3. Ajuste do contraste do box de sucesso e erros da descoberta de rede */
