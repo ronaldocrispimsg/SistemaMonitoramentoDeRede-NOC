@@ -246,9 +246,45 @@ def _message_fingerprint(message) -> str:
     return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
 
-def _is_suppressed_by_antispam(message: str, now_ts: float) -> bool:
+_FLAPPING_STATE = {}
+_FLAPPING_LOCK = Lock()
+
+
+def is_flapping_suppressed(message, now_ts: float, window_seconds: int = 300, max_changes: int = 4) -> bool:
+    """
+    4. Anti-Fadiga de Alertas / Anti-Flapping:
+    Detecta oscilacoes excessivas de estado (flapping) em curto espaco de tempo
+    e suprime disparos repetitivos para evitar fadiga de alertas (Alert Fatigue).
+    """
+    host_key = None
+    if isinstance(message, dict):
+        host_key = message.get("host_name") or message.get("host_id") or message.get("address")
+    elif isinstance(message, str):
+        import re
+        m = re.search(r"Host:\s*([^\n]+)", message)
+        if m:
+            host_key = m.group(1).strip()
+
+    if not host_key:
+        return False
+
+    with _FLAPPING_LOCK:
+        history = _FLAPPING_STATE.get(host_key, [])
+        history = [ts for ts in history if now_ts - ts <= window_seconds]
+        history.append(now_ts)
+        _FLAPPING_STATE[host_key] = history
+
+        if len(history) > max_changes:
+            return True
+        return False
+
+
+def _is_suppressed_by_antispam(message, now_ts: float) -> bool:
     if not TELEGRAM_ANTISPAM_ENABLED:
         return False
+
+    if is_flapping_suppressed(message, now_ts):
+        return True
 
     fp = _message_fingerprint(message)
 

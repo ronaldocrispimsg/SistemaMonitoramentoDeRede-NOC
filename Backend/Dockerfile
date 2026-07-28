@@ -6,6 +6,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     iputils-ping \
+    iproute2 \
+    snmp \
     nmap \
     && rm -rf /var/lib/apt/lists/*
 

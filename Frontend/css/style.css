@@ -529,8 +529,8 @@ button {
 
 #hosts {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
 }
 
 .card {
@@ -2358,6 +2358,10 @@ input[type=number] {
         grid-template-columns: repeat(3, minmax(140px, 1fr));
     }
 
+    #hosts {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
     #alert-container {
         width: calc(100vw - 24px);
         right: 12px;
@@ -2366,6 +2370,9 @@ input[type=number] {
 }
 
 @media (max-width: 768px) {
+    #hosts {
+        grid-template-columns: 1fr;
+    }
     .container {
         padding: 0 12px;
     }

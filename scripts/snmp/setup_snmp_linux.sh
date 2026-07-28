@@ -21,6 +21,17 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# 1.1 Aguardar DHCP / Conectividade de rede
+if command -v ping &> /dev/null; then
+    echo -e "${YELLOW}Aguardando obtenção de IP/DHCP e conectividade...${NC}"
+    MAX_ATTEMPTS=30
+    ATTEMPT=0
+    while ! ping -c 1 -W 2 8.8.8.8 &>/dev/null && ! ping -c 1 -W 2 100.0.1.254 &>/dev/null && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+        sleep 2
+        ATTEMPT=$((ATTEMPT + 1))
+    done
+fi
+
 # 2. Instalar snmpd respeitando a distribuição
 echo -e "\n${YELLOW}[1/4] Instalando pacote nativo snmpd...${NC}"
 if command -v apt-get &> /dev/null; then
@@ -43,17 +54,17 @@ if [ -f /etc/snmp/snmpd.conf ]; then
 fi
 
 cat <<EOF > /etc/snmp/snmpd.conf
-agentAddress udp:161,udp6:[::1]:161
+agentAddress udp:161
 rocommunity netspot default .1
 EOF
 echo -e "${GREEN}   ✔ Arquivo /etc/snmp/snmpd.conf configurado com acesso completo MIB (.1)!${NC}"
 
 # 4. Ajustar Firewall (UFW, Firewalld ou Iptables)
 echo -e "\n${YELLOW}[3/4] Ajustando Regras de Firewall (UDP 161)...${NC}"
-if command -v ufw &> /dev/null && ufw status | grep -q "active"; then
+if command -v ufw &> /dev/null && ufw status 2>/dev/null | grep -q "active"; then
     ufw allow 161/udp &> /dev/null || true
     echo -e "${GREEN}   ✔ Regra UFW (UDP 161) aplicada!${NC}"
-elif command -v firewall-cmd &> /dev/null && systemctl is-active --quiet firewalld; then
+elif [ -d /run/systemd/system ] && command -v firewall-cmd &> /dev/null && systemctl is-active --quiet firewalld 2>/dev/null; then
     firewall-cmd --add-port=161/udp --permanent &> /dev/null || true
     firewall-cmd --reload &> /dev/null || true
     echo -e "${GREEN}   ✔ Regra Firewalld (UDP 161) aplicada!${NC}"
@@ -61,13 +72,34 @@ else
     echo -e "${GREEN}   ✔ Nenhuma restrição de firewall ativa detectada.${NC}"
 fi
 
-# 5. Reiniciar o Serviço snmpd
+# 5. Reiniciar o Serviço snmpd (Universal: Systemd, SysVinit, Containers Kathara/Docker)
 echo -e "\n${YELLOW}[4/4] Habilitando e reiniciando o serviço snmpd...${NC}"
-if command -v systemctl &> /dev/null; then
-    systemctl restart snmpd || systemctl restart netsnmp || true
-    systemctl enable snmpd &> /dev/null || systemctl enable netsnmp &> /dev/null || true
-elif [ -f /etc/init.d/snmpd ]; then
-    /etc/init.d/snmpd restart
+
+SERVICE_STARTED=false
+
+# 5.1 Ambientes com Systemd ativo (Linux nativo, VMs, Servidores dedicados)
+if [ -d /run/systemd/system ] && command -v systemctl &> /dev/null; then
+    if systemctl restart snmpd 2>/dev/null || systemctl restart netsnmp 2>/dev/null; then
+        systemctl enable snmpd &> /dev/null || systemctl enable netsnmp &> /dev/null || true
+        SERVICE_STARTED=true
+    fi
+fi
+
+# 5.2 Ambientes sem Systemd (Containers Kathara/Docker, SysVinit, OpenRC, WSL)
+if [ "$SERVICE_STARTED" = false ]; then
+    if [ -f /etc/init.d/snmpd ]; then
+        /etc/init.d/snmpd restart &> /dev/null || /etc/init.d/snmpd start &> /dev/null || true
+        SERVICE_STARTED=true
+    elif [ -f /etc/init.d/netsnmp ]; then
+        /etc/init.d/netsnmp restart &> /dev/null || /etc/init.d/netsnmp start &> /dev/null || true
+        SERVICE_STARTED=true
+    elif command -v service &> /dev/null; then
+        service snmpd restart &> /dev/null || service snmpd start &> /dev/null || true
+        SERVICE_STARTED=true
+    else
+        snmpd &> /dev/null || true
+        SERVICE_STARTED=true
+    fi
 fi
 
 echo -e "${GREEN}   ✔ Serviço nativo snmpd rodando com sucesso!${NC}"

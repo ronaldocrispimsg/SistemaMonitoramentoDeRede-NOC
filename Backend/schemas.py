@@ -42,3 +42,6 @@ class NetworkImportHostItem(BaseModel):
 
 class NetworkImportRequest(BaseModel):
     hosts: List[NetworkImportHostItem]
+    snmp_enabled: Optional[bool] = True
+    snmp_community: Optional[str] = "netspot"
+

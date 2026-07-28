@@ -708,10 +708,16 @@ async function importSelectedLanHosts() {
     }
 
     try {
+        const communityInput = document.getElementById("snmp_community") || document.getElementById("modal-snmp-community");
+        const communityVal = communityInput ? communityInput.value.trim() : "netspot";
         const res = await fetchWithAuth(`${API}/network/import`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ hosts: selected })
+            body: JSON.stringify({
+                hosts: selected,
+                snmp_enabled: true,
+                snmp_community: communityVal || "netspot"
+            })
         });
         if (!res) return;
 
@@ -2415,26 +2421,47 @@ async function checkAlerts() {
 }
 
 async function softDeleteHost(hostId, hostName) {
-
     if (!confirm(`Mover host "${hostName}" para a lixeira?`)) return;
+
+    // Remoção visual imediata/otimista do card com animação suave
+    const cardNode = document.getElementById(`card-${hostName}`);
+    if (cardNode) {
+        cardNode.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+        cardNode.style.opacity = "0";
+        cardNode.style.transform = "scale(0.95)";
+        setTimeout(() => {
+            if (cardNode.parentNode) {
+                cardNode.remove();
+                const hostsDiv = document.getElementById("hosts");
+                if (hostsDiv && !hostsDiv.querySelector(".card")) {
+                    hostsDiv.innerHTML = "<div class='ui-state ui-state-empty'>Nenhum host cadastrado ainda.</div>";
+                }
+            }
+        }, 200);
+    }
 
     try {
         const res = await fetchWithAuth(`${API}/hosts/${hostId}/deactivate?host_name=${encodeURIComponent(hostName)}`, {
             method: "POST"
         });
 
-        if (!res.ok) {
-            const err = await res.json();
+        if (!res || !res.ok) {
+            const err = res ? await res.json() : {};
             showToast("error", "Erro ao mover para lixeira: " + (err.detail || "erro"));
+            await loadHosts();
             return;
         }
 
-        await loadHosts();
-        await loadTrashHosts();
         showToast("success", "Host movido para a lixeira.");
+        await Promise.all([
+            loadHosts(),
+            loadTrashHosts(),
+            loadDashboardSummary()
+        ]);
 
     } catch (e) {
         showToast("error", "Falha de conexão com a API.");
+        await loadHosts();
     }
 }
 
@@ -2505,7 +2532,7 @@ function closeSidebarMenu() {
 }
 
 async function restoreHost(hostId, hostName) {
-    if (!confirm(`Restaurar o host \"${hostName}\" da lixeira?`)) return;
+    if (!confirm(`Restaurar o host "${hostName}" da lixeira?`)) return;
 
     try {
         const res = await fetchWithAuth(`${API}/hosts/${hostId}/restore?host_name=${encodeURIComponent(hostName)}`, {
@@ -2517,16 +2544,28 @@ async function restoreHost(hostId, hostName) {
             return;
         }
 
-        await loadHosts();
-        await loadTrashHosts();
         showToast("success", "Host restaurado com sucesso.");
+        await Promise.all([
+            loadHosts(),
+            loadTrashHosts(),
+            loadDashboardSummary()
+        ]);
     } catch (err) {
         showToast("error", "Falha de conexão com a API.");
     }
 }
 
 async function hardDeleteHost(hostId, hostName) {
-    if (!confirm(`Excluir permanentemente o host \"${hostName}\"?\nEssa ação não pode ser desfeita.`)) return;
+    if (!confirm(`Excluir permanentemente o host "${hostName}"?\nEssa ação não pode ser desfeita.`)) return;
+
+    const cardNode = document.getElementById(`card-${hostName}`);
+    if (cardNode) {
+        cardNode.remove();
+        const hostsDiv = document.getElementById("hosts");
+        if (hostsDiv && !hostsDiv.querySelector(".card")) {
+            hostsDiv.innerHTML = "<div class='ui-state ui-state-empty'>Nenhum host cadastrado ainda.</div>";
+        }
+    }
 
     try {
         const res = await fetchWithAuth(`${API}/hosts/${hostId}/hard-delete?host_name=${encodeURIComponent(hostName)}`, {
@@ -2535,14 +2574,20 @@ async function hardDeleteHost(hostId, hostName) {
         if (!res || !res.ok) {
             const err = res ? await res.json() : {};
             showToast("error", "Erro na exclusão permanente: " + (err.detail || "erro"));
+            await loadHosts();
+            await loadTrashHosts();
             return;
         }
 
-        await loadHosts();
-        await loadTrashHosts();
         showToast("success", "Host excluído permanentemente.");
+        await Promise.all([
+            loadHosts(),
+            loadTrashHosts(),
+            loadDashboardSummary()
+        ]);
     } catch (err) {
         showToast("error", "Falha de conexão com a API.");
+        await loadHosts();
     }
 }
 

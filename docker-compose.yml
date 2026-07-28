@@ -38,6 +38,13 @@ services:
     environment:
       - DATABASE_URL=postgresql://netspot:netspot_password@db:5432/netspot
       - RABBITMQ_HOST=rabbitmq
+      - KATHARA_ROUTER_IP=172.17.0.2
+      - KATHARA_SUBNETS=10.0.0.0/16,100.0.0.0/16
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: always
 
   frontend:
@@ -70,6 +77,9 @@ services:
     user: root
     ports:
       - "5678:5678"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     depends_on:
       - db
     env_file:
@@ -87,3 +97,5 @@ services:
       - DB_POSTGRESDB_USER=netspot
       - DB_POSTGRESDB_PASSWORD=netspot_password
     restart: always
+
+

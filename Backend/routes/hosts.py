@@ -654,8 +654,8 @@ def network_import(
             http_url=None,
             http_enabled=False,
             last_http_protocol=None,
-            snmp_enabled=False,
-            snmp_community=None,
+            snmp_enabled=bool(data.snmp_enabled if data.snmp_enabled is not None else True),
+            snmp_community=(getattr(data, "snmp_community", "netspot") or "netspot").strip() or "netspot",
         )
 
         db.add(host)

@@ -638,7 +638,7 @@ async def _host_check_async(host_id: int) -> None:
 
         snmp_data = None
 
-        if host.status == "UP" and _snmp_is_configured(host) and can_attempt_snmp(host.id):
+        if host.status in ("UP", "DEGRADED") and _snmp_is_configured(host) and can_attempt_snmp(host.id):
             try:
                 snmp_data = await update_host_snmp(host, db)
             except Exception:
