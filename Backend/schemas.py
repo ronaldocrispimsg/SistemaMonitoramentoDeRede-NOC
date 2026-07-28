@@ -27,7 +27,7 @@ class HostCreate(BaseModel):
     url: Optional[str] = None
     http_url: Optional[str] = None
     http_enabled: bool = True
-    snmp_enabled: bool = False
+    snmp_enabled: bool = True
     snmp_community: Optional[str] = "netspot"
 
 

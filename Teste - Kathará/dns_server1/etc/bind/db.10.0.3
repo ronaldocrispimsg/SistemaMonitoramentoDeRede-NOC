@@ -1,0 +1,21 @@
+$TTL    86400
+@       IN      SOA     ns1.lab.local. root.lab.local. (
+                              1         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                          86400 )       ; Negative Cache TTL
+;
+@       IN      NS      ns1.lab.local.
+@       IN      NS      ns2.lab.local.
+
+7       IN      PTR     ns1.lab.local.
+8       IN      PTR     ns2.lab.local.
+2       IN      PTR     web1.lab.local.
+3       IN      PTR     web2.lab.local.
+4       IN      PTR     web3.lab.local.
+5       IN      PTR     app1.lab.local.
+6       IN      PTR     app2.lab.local.
+9       IN      PTR     db1.lab.local.
+10      IN      PTR     db2.lab.local.
+11      IN      PTR     db3.lab.local.

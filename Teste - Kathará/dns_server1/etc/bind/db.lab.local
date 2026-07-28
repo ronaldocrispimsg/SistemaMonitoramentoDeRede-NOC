@@ -1,0 +1,27 @@
+$TTL    86400
+@       IN      SOA     ns1.lab.local. root.lab.local. (
+                              1         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                          86400 )       ; Negative Cache TTL
+;
+@       IN      NS      ns1.lab.local.
+@       IN      NS      ns2.lab.local.
+
+ns1     IN      A       10.0.3.7
+ns2     IN      A       10.0.3.8
+
+web1    IN      A       10.0.3.2
+web2    IN      A       10.0.3.3
+web3    IN      A       10.0.3.4
+web     IN      A       10.0.3.2
+
+app1    IN      A       10.0.3.5
+app2    IN      A       10.0.3.6
+app     IN      A       10.0.3.5
+
+db1     IN      A       10.0.3.9
+db2     IN      A       10.0.3.10
+db3     IN      A       10.0.3.11
+db      IN      A       10.0.3.9

@@ -683,6 +683,9 @@ async function preloadDiscoverySubnet() {
 }
 
 async function importSelectedLanHosts() {
+    const communityInput = document.getElementById("snmp_community") || document.getElementById("modal-snmp-community");
+    const communityVal = communityInput ? communityInput.value.trim() : "netspot";
+
     const checks = Array.from(document.querySelectorAll(".discover-host-check:checked"));
     const selected = checks
         .map((check) => {
@@ -692,7 +695,9 @@ async function importSelectedLanHosts() {
         .filter(Boolean)
         .map((host) => ({
             name: host.name,
-            address: host.address
+            address: host.address,
+            snmp_enabled: true,
+            snmp_community: communityVal || "netspot"
         }));
 
     if (!selected.length) {
@@ -708,8 +713,6 @@ async function importSelectedLanHosts() {
     }
 
     try {
-        const communityInput = document.getElementById("snmp_community") || document.getElementById("modal-snmp-community");
-        const communityVal = communityInput ? communityInput.value.trim() : "netspot";
         const res = await fetchWithAuth(`${API}/network/import`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

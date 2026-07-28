@@ -626,10 +626,24 @@ def network_import(
             continue
         seen_addresses_in_request.add(address)
 
+        target_snmp_enabled = bool(
+            getattr(item, "snmp_enabled", None) if getattr(item, "snmp_enabled", None) is not None
+            else (data.snmp_enabled if data.snmp_enabled is not None else True)
+        )
+        target_snmp_community = (
+            getattr(item, "snmp_community", None) or getattr(data, "snmp_community", "netspot") or "netspot"
+        ).strip() or "netspot"
+
         if address in existing_ip_set:
+            existing_host = db.query(Host).filter(Host.address == address).first()
+            if existing_host:
+                existing_host.active = True
+                existing_host.deleted_at = None
+                existing_host.snmp_enabled = target_snmp_enabled
+                existing_host.snmp_community = target_snmp_community
             skipped_count += 1
             results.append({
-                "name": raw_name or _slug_ip_name(address),
+                "name": existing_host.name if existing_host else (raw_name or _slug_ip_name(address)),
                 "address": address,
                 "created": False,
                 "reason": "already_exists",
@@ -654,8 +668,8 @@ def network_import(
             http_url=None,
             http_enabled=False,
             last_http_protocol=None,
-            snmp_enabled=bool(data.snmp_enabled if data.snmp_enabled is not None else True),
-            snmp_community=(getattr(data, "snmp_community", "netspot") or "netspot").strip() or "netspot",
+            snmp_enabled=target_snmp_enabled,
+            snmp_community=target_snmp_community,
         )
 
         db.add(host)
