@@ -1168,6 +1168,11 @@ function updateTrafficRowInPlace(row, formattedValue, barWidth) {
 }
 
 function refreshVisibleChartsForHost(hostName) {
+    const historyBox = document.getElementById("history-" + hostName);
+    if (historyBox && !historyBox.classList.contains("hidden")) {
+        loadHistory(hostName, true);
+    }
+
     const availBox = document.getElementById("availability-chart-box-" + hostName);
     if (availBox && !availBox.classList.contains("hidden")) {
         loadAvailability(hostName);
@@ -1367,17 +1372,6 @@ async function loadLastResult(
             ? `${httpLatency} ms`
             : "Aguardando");
 
-    const formatAuxTcp = (enabled, latency, okFlag) => {
-        if (!enabled) return "-";
-        if (latency !== null && latency !== undefined) return `${latency} ms`;
-        if (okFlag === false) return "falha";
-        if (okFlag === true) return "sem dados";
-        return "Aguardando";
-    };
-
-    const portaHttpText = formatAuxTcp(httpEnabled, tcpHttpPortLatency, tcpHttpPortOk);
-    const portaHttpsText = formatAuxTcp(httpEnabled, tcpHttpsPortLatency, tcpHttpsPortOk);
-
     box.innerHTML = `
         <div>
             <span class="status-indicator ${pingDot}"></span>
@@ -1387,21 +1381,15 @@ async function loadLastResult(
             <span class="status-indicator ${webDot}"></span>
             ${httpEnabled ? protocolLabel : "Web"}: ${httpEnabled ? protocolValue : "Inativo"}
         </div>
-        <div>
-            <span class="status-indicator ${webDot}"></span>
-            HTTP (TCP 80): ${portaHttpText}
-        </div>
-        <div>
-            <span class="status-indicator ${webDot}"></span>
-            HTTPS (TCP 443): ${portaHttpsText}
-        </div>
     `;
 }
 
-async function loadHistory(name) {
+async function loadHistory(name, isRefresh = false) {
     const box = document.getElementById("history-" + name);
     if (!box) return;
-    box.innerHTML = "<div class='ui-state ui-state-info'>Carregando histórico...</div>";
+    if (!isRefresh && !box.querySelector(".history-line")) {
+        box.innerHTML = "<div class='ui-state ui-state-info'>Carregando histórico...</div>";
+    }
 
     try {
         const res = await fetchWithAuth(`${API}/host/history/${name}`);
@@ -1445,7 +1433,9 @@ async function loadHistory(name) {
         box.innerHTML = `<div class="host-history-scroll">${linesHtml}</div>`;
 
     } catch {
-        box.innerHTML = "<div class='ui-state ui-state-error'>Erro ao carregar histórico</div>";
+        if (!isRefresh) {
+            box.innerHTML = "<div class='ui-state ui-state-error'>Erro ao carregar histórico</div>";
+        }
     }
 }
 
